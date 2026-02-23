@@ -23,6 +23,8 @@
       "package": "com.successtutoring.parent",
       "permissions": [
         "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ]
     },
@@ -30,6 +32,12 @@
       "eas": {
         "projectId": "ea68f0fc-be35-43a8-95bd-37f218db1b45"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ea68f0fc-be35-43a8-95bd-37f218db1b45"
     }
   }
 }
