@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.successtutoring.parent",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "We need your location to find the nearest Success Tutoring centre."
+        "NSLocationWhenInUseUsageDescription": "We need your location to find the nearest Success Tutoring centre.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
