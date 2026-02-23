@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Success Tutoring",
+    "slug": "success-tutoring-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.successtutoring.parent",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "We need your location to find the nearest Success Tutoring centre."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.successtutoring.parent",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    }
+  }
+}
