@@ -1,8 +1,9 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
+import { getFunctions } from 'firebase/functions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// IMPORTANT: Replace these with your real Firebase config values
-// Firebase Console → Project Settings → General → Your apps → Web app
 const firebaseConfig = {
   apiKey: "AIzaSyDG1LOpFz05Ty9_J7IO6XQvKUJnLTXoriE",
   authDomain: "success-tutoring-test.firebaseapp.com",
@@ -15,6 +16,10 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const db = getFirestore(app);
+const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage),
+});
+const functions = getFunctions(app);
 
-export { db };
+export { db, auth, functions };
 export default app;

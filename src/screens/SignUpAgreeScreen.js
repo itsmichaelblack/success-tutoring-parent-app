@@ -3,7 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { signInAnonymously } from 'firebase/auth';
+import { db, auth } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
 import { COLORS, SIZES } from '../config/theme';
 
@@ -20,6 +21,10 @@ export default function SignUpAgreeScreen({ navigation, route }) {
     if (!allChecked) return;
     setLoading(true);
     try {
+      // Sign in anonymously so we get a Firebase UID for Cloud Functions
+      const cred = await signInAnonymously(auth);
+      const firebaseUid = cred.user.uid;
+
       const parentId = `parent_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const parentDoc = {
         firstName,
@@ -29,6 +34,7 @@ export default function SignUpAgreeScreen({ navigation, route }) {
         phone: mobile,
         locationId,
         locationName,
+        firebaseUid,
         children: [],
         agreements: {
           membershipPolicy: true,
