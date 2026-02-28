@@ -51,13 +51,21 @@ export default function HomeScreen({ navigation }) {
       return;
     }
 
+    if (!parentData?.id) {
+      Alert.alert('Error', 'No parent account found. Please sign out and register again.');
+      setSaving(false);
+      return;
+    }
+
     setSaving(true);
     try {
-      await addChild({ name: childName.trim(), grade: childGrade });
+      const result = await addChild({ name: childName.trim(), grade: childGrade });
+      console.log('Child added:', result);
       resetModal();
       setModalVisible(false);
     } catch (e) {
-      Alert.alert('Error', 'Failed to add child. Please try again.');
+      console.error('Add child error:', e);
+      Alert.alert('Error', 'Failed to add child: ' + (e.message || 'Unknown error. Check Firestore rules.'));
     }
     setSaving(false);
   };
