@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -11,8 +11,13 @@ const AU_GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', '
 const NZ_GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12', 'Grade 13'];
 
 export default function ManageChildrenScreen({ navigation }) {
-  const { parentData, addChild, setParentData } = useParent();
+  const { parentData, addChild, setParentData, loadChildren } = useParent();
   const children = parentData?.children || [];
+
+  // Load children from Firebase on mount
+  useEffect(() => {
+    if (parentData?.id) loadChildren(parentData.id);
+  }, [parentData?.id]);
 
   const isNZ = ['new lynn', 'mt roskill', 'northwest', 'palmerston north', 'lower hutt', 'papanui'].some(
     nz => (parentData?.locationName || '').toLowerCase().includes(nz)
