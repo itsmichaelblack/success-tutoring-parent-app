@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -149,8 +149,9 @@ export default function ManageChildrenScreen({ navigation }) {
       </ScrollView>
 
       {/* Add Child Modal */}
-      <Modal visible={addModalVisible} transparent animationType="slide" onRequestClose={() => { resetAddModal(); setAddModalVisible(false); }}>
-        <View style={s.modalOverlay}>
+      <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={() => { resetAddModal(); setAddModalVisible(false); }}>
+        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { resetAddModal(); setAddModalVisible(false); }} />
           <View style={s.modalContent}>
             <View style={s.modalHeader}>
               <Text style={s.modalTitle}>Add a Child</Text>
@@ -164,12 +165,14 @@ export default function ManageChildrenScreen({ navigation }) {
               {saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={s.modalBtnText}>Add Child</Text>}
             </TouchableOpacity>
           </View>
-        </View>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { resetAddModal(); setAddModalVisible(false); }} />
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Edit Child Modal */}
-      <Modal visible={editModalVisible} transparent animationType="slide" onRequestClose={() => setEditModalVisible(false)}>
-        <View style={s.modalOverlay}>
+      <Modal visible={editModalVisible} transparent animationType="fade" onRequestClose={() => setEditModalVisible(false)}>
+        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setEditModalVisible(false)} />
           <View style={s.modalContent}>
             <View style={s.modalHeader}>
               <Text style={s.modalTitle}>Edit Child</Text>
@@ -183,7 +186,8 @@ export default function ManageChildrenScreen({ navigation }) {
               {editSaving ? <ActivityIndicator color={COLORS.white} /> : <Text style={s.modalBtnText}>Save Changes</Text>}
             </TouchableOpacity>
           </View>
-        </View>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setEditModalVisible(false)} />
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -203,8 +207,8 @@ const s = StyleSheet.create({
   emptyText: { fontSize: 14, fontWeight: '700', color: COLORS.muted },
   addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 14, borderRadius: SIZES.radius, borderWidth: 1, borderStyle: 'dashed', borderColor: COLORS.border, backgroundColor: COLORS.white },
   addBtnText: { fontSize: 14, fontWeight: '600', color: COLORS.orange },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: SIZES.padding, paddingBottom: 40, maxHeight: '80%' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', paddingHorizontal: 20 },
+  modalContent: { backgroundColor: COLORS.white, borderRadius: 20, padding: SIZES.padding, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: COLORS.dark },
   modalLabel: { fontSize: 11, fontWeight: '700', color: COLORS.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
