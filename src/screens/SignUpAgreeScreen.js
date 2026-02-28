@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Modal, ScrollView, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Modal, ScrollView, Platform } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -96,6 +96,7 @@ function RichTextRenderer({ html }) {
 export default function SignUpAgreeScreen({ navigation, route }) {
   const { locationId, locationName } = route.params;
   const { setParentData, loadChildren } = useParent();
+  const insets = useSafeAreaInsets();
   const [checks, setChecks] = useState({});
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -283,7 +284,7 @@ export default function SignUpAgreeScreen({ navigation, route }) {
         presentationStyle="fullScreen"
         onRequestClose={() => setModalVisible(false)}
       >
-        <SafeAreaView style={s.modalContainer} edges={['top', 'bottom']}>
+        <View style={[s.modalContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           {/* Modal header */}
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{modalPolicy?.label || 'Policy'}</Text>
@@ -313,7 +314,7 @@ export default function SignUpAgreeScreen({ navigation, route }) {
               <Text style={s.modalDoneBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -337,7 +338,7 @@ const s = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: COLORS.white },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SIZES.padding, paddingTop: 8, paddingBottom: 16,
+    paddingHorizontal: SIZES.padding, paddingVertical: 16,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   modalTitle: { fontSize: 18, fontWeight: '800', color: COLORS.dark, flex: 1 },
