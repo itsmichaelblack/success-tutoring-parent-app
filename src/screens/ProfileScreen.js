@@ -22,11 +22,11 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const menuItems = [
-    { icon: 'user', iconBg: COLORS.orangeLight, iconColor: COLORS.orange, title: 'Edit Profile', desc: 'Name, email, phone number' },
-    { icon: 'users', iconBg: COLORS.tealLight, iconColor: COLORS.teal, title: 'Manage Children', desc: 'Add, edit, or remove children' },
-    { icon: 'credit-card', iconBg: COLORS.blueBg, iconColor: COLORS.blue, title: 'Billing & Payments', desc: 'Manage payment methods' },
-    { icon: 'map-pin', iconBg: COLORS.successBg, iconColor: COLORS.success, title: 'My Centre', desc: parentData?.locationName || 'Your centre' },
-    { icon: 'bell', iconBg: 'rgba(156,163,175,0.08)', iconColor: COLORS.muted, title: 'Notifications', desc: 'Booking reminders, updates' },
+    { icon: 'user', iconBg: COLORS.orangeLight, iconColor: COLORS.orange, title: 'Edit Profile', desc: 'Name, email, phone number', screen: 'EditProfile' },
+    { icon: 'users', iconBg: COLORS.tealLight, iconColor: COLORS.teal, title: 'Manage Children', desc: 'Add, edit, or remove children', screen: 'ManageChildren' },
+    { icon: 'credit-card', iconBg: COLORS.blueBg, iconColor: COLORS.blue, title: 'Billing & Payments', desc: 'Manage payment methods', screen: 'Billing' },
+    { icon: 'map-pin', iconBg: COLORS.successBg, iconColor: COLORS.success, title: 'My Centre', desc: parentData?.locationName || 'Your centre', screen: 'MyCentre' },
+    { icon: 'bell', iconBg: 'rgba(156,163,175,0.08)', iconColor: COLORS.muted, title: 'Notifications', desc: 'Booking reminders, updates', screen: 'Notifications' },
   ];
 
   return (
@@ -45,7 +45,7 @@ export default function ProfileScreen({ navigation }) {
 
         <View style={s.menu}>
           {menuItems.map((item, i) => (
-            <TouchableOpacity key={i} style={s.menuItem}>
+            <TouchableOpacity key={i} style={s.menuItem} onPress={() => item.screen && navigation.navigate(item.screen)}>
               <View style={[s.menuIcon, { backgroundColor: item.iconBg }]}>
                 <Feather name={item.icon} size={16} color={item.iconColor} />
               </View>

@@ -9,6 +9,11 @@ import SignUpLocationScreen from './src/screens/SignUpLocationScreen';
 import SignUpDetailsScreen from './src/screens/SignUpDetailsScreen';
 import SignUpAgreeScreen from './src/screens/SignUpAgreeScreen';
 import MainTabs from './src/navigation/MainTabs';
+import EditProfileScreen from './src/screens/EditProfileScreen';
+import ManageChildrenScreen from './src/screens/ManageChildrenScreen';
+import BillingScreen from './src/screens/BillingScreen';
+import MyCentreScreen from './src/screens/MyCentreScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -23,6 +28,11 @@ export default function App() {
           <Stack.Screen name="SignUpDetails" component={SignUpDetailsScreen} />
           <Stack.Screen name="SignUpAgree" component={SignUpAgreeScreen} />
           <Stack.Screen name="Main" component={MainTabs} options={{ gestureEnabled: false }} />
+          <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+          <Stack.Screen name="ManageChildren" component={ManageChildrenScreen} />
+          <Stack.Screen name="Billing" component={BillingScreen} />
+          <Stack.Screen name="MyCentre" component={MyCentreScreen} />
+          <Stack.Screen name="Notifications" component={NotificationsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </ParentProvider>
