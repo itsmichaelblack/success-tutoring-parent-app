@@ -14,6 +14,7 @@ import ManageChildrenScreen from './src/screens/ManageChildrenScreen';
 import BillingScreen from './src/screens/BillingScreen';
 import MyCentreScreen from './src/screens/MyCentreScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
+import MembershipsScreen from './src/screens/MembershipsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -33,6 +34,7 @@ export default function App() {
           <Stack.Screen name="Billing" component={BillingScreen} />
           <Stack.Screen name="MyCentre" component={MyCentreScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
+          <Stack.Screen name="Memberships" component={MembershipsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </ParentProvider>

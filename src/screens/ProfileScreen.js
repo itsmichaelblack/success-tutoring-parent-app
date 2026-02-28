@@ -25,6 +25,7 @@ export default function ProfileScreen({ navigation }) {
     { icon: 'user', iconBg: COLORS.orangeLight, iconColor: COLORS.orange, title: 'Edit Profile', desc: 'Name, email, phone number', screen: 'EditProfile' },
     { icon: 'users', iconBg: COLORS.tealLight, iconColor: COLORS.teal, title: 'Manage Children', desc: 'Add, edit, or remove children', screen: 'ManageChildren' },
     { icon: 'credit-card', iconBg: COLORS.blueBg, iconColor: COLORS.blue, title: 'Billing & Payments', desc: 'Manage payment methods', screen: 'Billing' },
+    { icon: 'award', iconBg: COLORS.tealLight, iconColor: COLORS.teal, title: 'Memberships', desc: 'View plans and purchase', screen: 'Memberships' },
     { icon: 'map-pin', iconBg: COLORS.successBg, iconColor: COLORS.success, title: 'My Centre', desc: parentData?.locationName || 'Your centre', screen: 'MyCentre' },
     { icon: 'bell', iconBg: 'rgba(156,163,175,0.08)', iconColor: COLORS.muted, title: 'Notifications', desc: 'Booking reminders, updates', screen: 'Notifications' },
   ];
