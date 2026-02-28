@@ -22,13 +22,23 @@ export default function SignUpLocationScreen({ navigation }) {
   const [detecting, setDetecting] = useState(false);
   const [search, setSearch] = useState('');
 
+  const [locationsLoaded, setLocationsLoaded] = useState(false);
+
   useEffect(() => { loadLocations(); }, []);
+
+  // Auto-detect location once locations have loaded
+  useEffect(() => {
+    if (locationsLoaded && locations.length > 0 && !userLoc) {
+      detectLocation();
+    }
+  }, [locationsLoaded]);
 
   const loadLocations = async () => {
     try {
       const snap = await getDocs(collection(db, 'locations'));
       const locs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setLocations(locs);
+      setLocationsLoaded(true);
     } catch (e) {
       console.error('Failed to load locations:', e);
     }
@@ -46,9 +56,8 @@ export default function SignUpLocationScreen({ navigation }) {
       const loc = await Location.getCurrentPositionAsync({});
       setUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
       const sorted = locations
-        .filter(l => l.lat && l.lng)
-        .map(l => ({ ...l, distance: getDistance(loc.coords.latitude, loc.coords.longitude, l.lat, l.lng) }))
-        .sort((a, b) => a.distance - b.distance);
+        .map(l => ({ ...l, distance: (l.lat && l.lng) ? getDistance(loc.coords.latitude, loc.coords.longitude, l.lat, l.lng) : null }))
+        .sort((a, b) => (a.distance ?? 999999) - (b.distance ?? 999999));
       if (sorted.length > 0) {
         setLocations(sorted);
         setSelected(sorted[0].id);
