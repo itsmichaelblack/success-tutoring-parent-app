@@ -9,7 +9,7 @@ import { COLORS, SIZES } from '../config/theme';
 
 export default function SignUpAgreeScreen({ navigation, route }) {
   const { locationId, locationName, firstName, lastName, mobile, email } = route.params;
-  const { setParentData } = useParent();
+  const { setParentData, loadChildren } = useParent();
   const [checks, setChecks] = useState({ membership: false, terms: false, privacy: false });
   const [loading, setLoading] = useState(false);
 
@@ -42,7 +42,8 @@ export default function SignUpAgreeScreen({ navigation, route }) {
       await setDoc(doc(db, 'parents', parentId), parentDoc);
 
       // Store in context for use across screens
-      setParentData({ ...parentDoc, id: parentId });
+      setParentData({ ...parentDoc, id: parentId, children: [] });
+      await loadChildren(parentId);
 
       // Navigate to main app
       navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
