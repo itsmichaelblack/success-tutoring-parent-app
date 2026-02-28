@@ -24,7 +24,13 @@ export default function SignUpLocationScreen({ navigation }) {
 
   const [locationsLoaded, setLocationsLoaded] = useState(false);
 
-  useEffect(() => { loadLocations(); }, []);
+  useEffect(() => {
+    const init = async () => {
+      await Location.requestForegroundPermissionsAsync();
+      loadLocations();
+    };
+    init();
+  }, []);
 
   // Auto-detect location once locations have loaded
   useEffect(() => {
@@ -37,7 +43,25 @@ export default function SignUpLocationScreen({ navigation }) {
     try {
       const snap = await getDocs(collection(db, 'locations'));
       const locs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setLocations(locs);
+      
+      // Geocode locations that don't have lat/lng
+      const geocoded = await Promise.all(
+        locs.map(async (loc) => {
+          if (loc.lat && loc.lng) return loc;
+          if (!loc.address) return loc;
+          try {
+            const results = await Location.geocodeAsync(loc.address);
+            if (results.length > 0) {
+              return { ...loc, lat: results[0].latitude, lng: results[0].longitude };
+            }
+          } catch (e) {
+            console.warn('Geocode failed for:', loc.name);
+          }
+          return loc;
+        })
+      );
+      
+      setLocations(geocoded);
       setLocationsLoaded(true);
     } catch (e) {
       console.error('Failed to load locations:', e);
