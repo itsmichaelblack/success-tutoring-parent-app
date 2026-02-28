@@ -20,6 +20,18 @@ export default function HomeScreen({ navigation }) {
   const locationName = parentData?.locationName || 'Your Centre';
   const children = parentData?.children || [];
 
+  // Determine if new user (account created less than 5 minutes ago)
+  const isNewUser = (() => {
+    const created = parentData?.createdAt;
+    if (!created) return false;
+    let createdDate;
+    if (created?.toDate) createdDate = created.toDate();
+    else if (created?.seconds) createdDate = new Date(created.seconds * 1000);
+    else if (typeof created === 'string') createdDate = new Date(created);
+    else return false;
+    return (Date.now() - createdDate.getTime()) < 5 * 60 * 1000;
+  })();
+
   // Determine if NZ based on location address
   const isNZ = (parentData?.locationName || '').toLowerCase().includes('new zealand') ||
     ['new lynn', 'mt roskill', 'northwest', 'palmerston north', 'lower hutt', 'papanui'].some(
@@ -72,7 +84,7 @@ export default function HomeScreen({ navigation }) {
     <SafeAreaView style={s.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={s.header}>
-          <Text style={s.greeting}>Welcome back, <Text style={{ color: COLORS.orange }}>{firstName}</Text> 👋</Text>
+          <Text style={s.greeting}>{isNewUser ? 'Welcome,' : 'Welcome back,'} <Text style={{ color: COLORS.orange }}>{firstName}</Text> 👋</Text>
           <Text style={s.location}>📍 {locationName}</Text>
         </View>
 

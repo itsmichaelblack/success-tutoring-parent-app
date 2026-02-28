@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { doc, getDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
 import { COLORS, SIZES } from '../config/theme';
+
+const AU_GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
+const NZ_GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12', 'Grade 13'];
 
 const ALL_MEMBERSHIPS = {
   foundation_phase_1: { name: 'Foundation Phase 1', desc: 'Introductory membership for new students starting their learning journey. Includes foundational assessment and personalised learning plan.', credits: '2 Credits Per Week', category: 'membership' },
@@ -24,7 +27,7 @@ const ALL_MEMBERSHIPS = {
 };
 
 export default function MembershipsScreen({ navigation }) {
-  const { parentData } = useParent();
+  const { parentData, addChild } = useParent();
   const children = parentData?.children || [];
 
   const [sales, setSales] = useState([]);
@@ -35,6 +38,34 @@ export default function MembershipsScreen({ navigation }) {
   const [showPurchase, setShowPurchase] = useState(false);
   const [selectedChild, setSelectedChild] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // Add child modal
+  const [addChildVisible, setAddChildVisible] = useState(false);
+  const [childName, setChildName] = useState('');
+  const [childGrade, setChildGrade] = useState('');
+  const [gradePickerOpen, setGradePickerOpen] = useState(false);
+  const [addChildSaving, setAddChildSaving] = useState(false);
+
+  const isNZ = ['new lynn', 'mt roskill', 'northwest', 'palmerston north', 'lower hutt', 'papanui'].some(
+    nz => (parentData?.locationName || '').toLowerCase().includes(nz)
+  );
+  const GRADES = isNZ ? NZ_GRADES : AU_GRADES;
+
+  const resetAddChildModal = () => { setChildName(''); setChildGrade(''); setGradePickerOpen(false); setAddChildSaving(false); };
+
+  const handleAddChild = async () => {
+    if (!childName.trim()) { Alert.alert('Missing Info', 'Please enter your child\'s name.'); return; }
+    if (!childGrade) { Alert.alert('Missing Info', 'Please select a grade.'); return; }
+    setAddChildSaving(true);
+    try {
+      await addChild({ name: childName.trim(), grade: childGrade });
+      resetAddChildModal();
+      setAddChildVisible(false);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to add child. Please try again.');
+    }
+    setAddChildSaving(false);
+  };
 
   useEffect(() => {
     if (parentData?.locationId) loadData();
@@ -152,6 +183,10 @@ export default function MembershipsScreen({ navigation }) {
                 <Text style={{ fontSize: 28, marginBottom: 8 }}>👧</Text>
                 <Text style={s.emptyText}>No children added yet</Text>
                 <Text style={s.emptyDesc}>Add a child first to manage memberships.</Text>
+                <TouchableOpacity style={[s.addBtn, { marginTop: 16, width: '100%' }]} onPress={() => setAddChildVisible(true)}>
+                  <Feather name="plus" size={16} color={COLORS.orange} />
+                  <Text style={s.addBtnText}>Add a Child</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               children.map((child, ci) => {
@@ -294,6 +329,56 @@ export default function MembershipsScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Add Child Modal */}
+      <Modal visible={addChildVisible} transparent animationType="fade" onRequestClose={() => { resetAddChildModal(); setAddChildVisible(false); }}>
+        <KeyboardAvoidingView style={s.purchaseOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { resetAddChildModal(); setAddChildVisible(false); }} />
+          <View style={[s.purchaseContent, { borderTopLeftRadius: 20, borderTopRightRadius: 20 }]}>
+            <View style={s.purchaseHeader}>
+              <Text style={s.purchaseTitle}>Add a Child</Text>
+              <TouchableOpacity onPress={() => { resetAddChildModal(); setAddChildVisible(false); }}>
+                <Feather name="x" size={22} color={COLORS.muted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={s.addChildLabel}>Child's Full Name <Text style={{ color: COLORS.orange }}>*</Text></Text>
+            <TextInput
+              style={s.addChildInput}
+              value={childName}
+              onChangeText={setChildName}
+              placeholder="e.g. Sarah Smith"
+              placeholderTextColor="#c5c8cc"
+              autoCapitalize="words"
+            />
+            <Text style={[s.addChildLabel, { marginTop: 16 }]}>Grade <Text style={{ color: COLORS.orange }}>*</Text></Text>
+            <TouchableOpacity
+              style={[s.addChildInput, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+              onPress={() => setGradePickerOpen(!gradePickerOpen)}
+            >
+              <Text style={{ fontSize: 15, color: childGrade ? COLORS.dark : '#c5c8cc' }}>{childGrade || 'Select grade...'}</Text>
+              <Feather name={gradePickerOpen ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.muted} />
+            </TouchableOpacity>
+            {gradePickerOpen && (
+              <ScrollView style={{ maxHeight: 200, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, marginTop: 4 }} nestedScrollEnabled>
+                {GRADES.map(g => (
+                  <TouchableOpacity key={g} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: childGrade === g ? COLORS.orangeLight : 'transparent' }} onPress={() => { setChildGrade(g); setGradePickerOpen(false); }}>
+                    <Text style={{ fontSize: 14, color: childGrade === g ? COLORS.orange : COLORS.dark, fontWeight: childGrade === g ? '700' : '400' }}>{g}</Text>
+                    {childGrade === g && <Feather name="check" size={16} color={COLORS.orange} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+            <TouchableOpacity
+              style={[s.addBtn, { marginTop: 20, backgroundColor: COLORS.orange, borderStyle: 'solid', borderColor: COLORS.orange }, (!childName.trim() || !childGrade || addChildSaving) && { opacity: 0.4 }]}
+              disabled={!childName.trim() || !childGrade || addChildSaving}
+              onPress={handleAddChild}
+            >
+              {addChildSaving ? <ActivityIndicator color={COLORS.white} /> : <Text style={[s.addBtnText, { color: COLORS.white }]}>Add Child</Text>}
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { resetAddChildModal(); setAddChildVisible(false); }} />
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -358,4 +443,8 @@ const s = StyleSheet.create({
   creditBadgeText: { fontSize: 11, fontWeight: '600', color: COLORS.teal },
   planPrice: { fontSize: 20, fontWeight: '800', color: COLORS.orange },
   planPer: { fontSize: 11, color: COLORS.muted },
+
+  // Add child modal
+  addChildLabel: { fontSize: 11, fontWeight: '700', color: COLORS.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  addChildInput: { padding: 14, borderRadius: 12, borderWidth: 2, borderColor: COLORS.border, fontSize: 15, color: COLORS.dark },
 });
