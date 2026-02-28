@@ -286,6 +286,21 @@ export default function ExploreScreen({ navigation }) {
   // Purchase membership
   const handlePurchaseMembership = async (membershipId) => {
     if (selectedChild === null) return;
+
+    // Check if parent has a payment method on file
+    const hasPayment = parentData?.paymentMethod || parentData?.stripeCustomerId;
+    if (!hasPayment) {
+      Alert.alert(
+        'Payment Method Required',
+        'You need to add a payment method before purchasing a membership.',
+        [
+          { text: 'Add Payment Method', onPress: () => { setShowMembershipModal(false); setPendingSession(null); navigation.navigate('Billing'); } },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     const child = children[selectedChild];
     const info = ALL_MEMBERSHIPS.find(m => m.id === membershipId);
     const price = pricing?.[membershipId]?.price || '0';

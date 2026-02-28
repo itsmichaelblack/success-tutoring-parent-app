@@ -75,6 +75,21 @@ export default function MembershipsScreen({ navigation }) {
 
   const handlePurchase = async (membershipId) => {
     if (!selectedChild) return;
+
+    // Check if parent has a payment method on file
+    const hasPayment = parentData?.paymentMethod || parentData?.stripeCustomerId;
+    if (!hasPayment) {
+      Alert.alert(
+        'Payment Method Required',
+        'You need to add a payment method before purchasing a membership.',
+        [
+          { text: 'Add Payment Method', onPress: () => { setShowPurchase(false); setSelectedChild(null); navigation.navigate('Billing'); } },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     const info = ALL_MEMBERSHIPS[membershipId];
     const price = pricing?.[membershipId]?.price || '0';
     const today = new Date().toISOString().split('T')[0];
