@@ -3,10 +3,11 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIn
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../config/firebase';
+import { db } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
 import { COLORS, SIZES } from '../config/theme';
+
+const FUNCTIONS_URL = 'https://us-central1-success-tutoring-test.cloudfunctions.net';
 
 export default function BillingScreen({ navigation }) {
   const { parentData, setParentData } = useParent();
@@ -21,7 +22,6 @@ export default function BillingScreen({ navigation }) {
   const loadPaymentMethods = async () => {
     setLoading(true);
     try {
-      // Check sales for this parent that have payment methods
       const q = query(
         collection(db, 'sales'),
         where('parentEmail', '==', parentData?.email?.toLowerCase()),
@@ -37,12 +37,13 @@ export default function BillingScreen({ navigation }) {
           methods.push(data.paymentMethod);
         }
       });
-      setPaymentMethods(methods);
 
-      // Also check parent doc for payment method
+      // Also check parent doc
       if (parentData?.paymentMethod?.last4 && !seen.has(parentData.paymentMethod.last4)) {
         methods.push(parentData.paymentMethod);
       }
+
+      setPaymentMethods(methods);
     } catch (e) {
       console.error('Failed to load payment methods:', e);
     }
@@ -52,105 +53,96 @@ export default function BillingScreen({ navigation }) {
   const handleAddPaymentMethod = async () => {
     setAdding(true);
     try {
-      // Call createSetupIntent Cloud Function
-      const createSetup = httpsCallable(functions, 'createSetupIntent');
-      const result = await createSetup({
-        parentEmail: parentData.email,
-        parentName: parentData.name,
-        parentPhone: parentData.phone,
-        locationId: parentData.locationId,
-        saleId: '',
+      // Call createPaymentLink Cloud Function via HTTPS
+      // This creates a Stripe Checkout session and returns a URL
+      const response = await fetch(`${FUNCTIONS_URL}/createPaymentLink`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          data: {
+            parentEmail: parentData.email,
+            locationId: parentData.locationId,
+            saleId: 'none',
+          }
+        }),
       });
 
-      const { clientSecret, customerId, stripeAccountId } = result.data;
+      const result = await response.json();
 
-      if (!clientSecret) {
-        Alert.alert('Error', 'Failed to initialize payment setup. Please try again.');
-        setAdding(false);
-        return;
-      }
+      if (result?.result?.url) {
+        // Open Stripe Checkout in browser
+        const { Linking } = require('react-native');
+        await Linking.openURL(result.result.url);
 
-      // Use Stripe SDK to collect payment
-      try {
-        const { initPaymentSheet, presentPaymentSheet } = require('@stripe/stripe-react-native');
+        // After user returns, try to confirm the payment method was saved
+        Alert.alert(
+          'Payment Setup',
+          'After completing payment setup in the browser, tap "Confirm" to update your account.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Confirm',
+              onPress: async () => {
+                try {
+                  const confirmResponse = await fetch(`${FUNCTIONS_URL}/savePaymentFromCheckout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      data: {
+                        parentEmail: parentData.email,
+                        locationId: parentData.locationId,
+                      }
+                    }),
+                  });
 
-        const { error: initError } = await initPaymentSheet({
-          setupIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Success Tutoring',
-          style: 'automatic',
-          returnURL: 'successtutoring://payment-complete',
-        });
+                  const confirmResult = await confirmResponse.json();
+                  if (confirmResult?.result?.success) {
+                    const pmInfo = {
+                      brand: confirmResult.result.brand || 'Card',
+                      last4: confirmResult.result.last4 || '****',
+                      type: confirmResult.result.type || 'card',
+                    };
 
-        if (initError) {
-          console.error('Init error:', initError);
-          Alert.alert('Error', initError.message || 'Failed to initialize payment form.');
-          setAdding(false);
-          return;
+                    await updateDoc(doc(db, 'parents', parentData.id), {
+                      paymentMethod: pmInfo,
+                      stripeCustomerId: confirmResult.result.customerId,
+                    });
+
+                    setParentData(prev => ({
+                      ...prev,
+                      paymentMethod: pmInfo,
+                      stripeCustomerId: confirmResult.result.customerId,
+                    }));
+
+                    setPaymentMethods(prev => {
+                      if (prev.some(p => p.last4 === pmInfo.last4)) return prev;
+                      return [...prev, pmInfo];
+                    });
+
+                    Alert.alert('Success!', `Your ${pmInfo.brand} card ending in ${pmInfo.last4} has been saved.`);
+                  } else {
+                    Alert.alert('Not Found', 'No payment method found yet. It may take a moment to process. Try again shortly.');
+                  }
+                } catch (e) {
+                  console.error('Confirm error:', e);
+                  Alert.alert('Error', 'Could not confirm payment method. Try again.');
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        const errorMsg = result?.error?.message || 'Failed to create payment link.';
+        if (errorMsg.includes('not connected') || errorMsg.includes('Stripe not connected')) {
+          Alert.alert('Stripe Not Connected', 'Your centre has not connected Stripe yet. Please contact your centre.');
+        } else {
+          Alert.alert('Error', errorMsg);
         }
-
-        const { error: presentError } = await presentPaymentSheet();
-
-        if (presentError) {
-          if (presentError.code === 'Canceled') {
-            // User cancelled — that's fine
-            setAdding(false);
-            return;
-          }
-          Alert.alert('Error', presentError.message || 'Payment setup failed.');
-          setAdding(false);
-          return;
-        }
-
-        // Payment method saved! Now confirm it via Cloud Function
-        const confirmPM = httpsCallable(functions, 'confirmPaymentMethod');
-        const confirmResult = await confirmPM({
-          saleId: '',
-          customerId,
-          stripeAccountId,
-        });
-
-        const pmInfo = {
-          brand: confirmResult.data.brand || 'Card',
-          last4: confirmResult.data.last4 || '****',
-          type: confirmResult.data.type || 'card',
-        };
-
-        // Update parent doc with payment method
-        await updateDoc(doc(db, 'parents', parentData.id), {
-          paymentMethod: pmInfo,
-          stripeCustomerId: customerId,
-          stripeAccountId,
-        });
-
-        setParentData(prev => ({
-          ...prev,
-          paymentMethod: pmInfo,
-          stripeCustomerId: customerId,
-          stripeAccountId,
-        }));
-
-        setPaymentMethods(prev => {
-          if (prev.some(p => p.last4 === pmInfo.last4)) return prev;
-          return [...prev, pmInfo];
-        });
-
-        Alert.alert('Success!', `Your ${pmInfo.brand} card ending in ${pmInfo.last4} has been saved.`);
-
-      } catch (stripeErr) {
-        console.error('Stripe SDK error:', stripeErr);
-        Alert.alert('Error', 'Stripe payment sheet is not available. Make sure you are running on a real device with a development build (not Expo Go).');
       }
 
     } catch (e) {
-      console.error('Setup intent error:', e);
-      const msg = e.message || '';
-      if (msg.includes('not configured') || msg.includes('not connected')) {
-        Alert.alert('Stripe Not Connected', 'Your centre has not connected Stripe yet. Please contact your centre.');
-      } else if (msg.includes('unauthenticated')) {
-        Alert.alert('Authentication Required', 'Please sign out and sign up again to enable payments.');
-      } else {
-        Alert.alert('Error', 'Failed to set up payment: ' + msg);
-      }
+      console.error('Payment link error:', e);
+      Alert.alert('Error', 'Failed to set up payment. Please try again.');
     }
     setAdding(false);
   };
@@ -210,14 +202,12 @@ export default function BillingScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
-        {/* Billing History */}
         <Text style={[s.sectionTitle, { marginTop: 28 }]}>Billing History</Text>
         <View style={s.emptyCard}>
           <Text style={s.emptyText}>No transactions yet</Text>
           <Text style={s.emptyDesc}>Your payment history will appear here once you have an active membership.</Text>
         </View>
 
-        {/* Security Note */}
         <View style={s.noteCard}>
           <Feather name="lock" size={16} color={COLORS.success} />
           <Text style={s.noteText}>Your payment information is securely processed by Stripe. We never store your full card details.</Text>

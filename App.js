@@ -2,7 +2,6 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StripeProvider } from '@stripe/stripe-react-native';
 import { ParentProvider } from './src/config/ParentContext';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -21,10 +20,6 @@ const Stack = createNativeStackNavigator();
 
 export default function App() {
   return (
-    <StripeProvider
-      publishableKey="pk_test_51T5SUvLsPU0tzh4WBBfeISFfSFTLC0rD2c7fuB9h3ePAToMm0levx9XYwQ2yqIDxwswTVmcX9EaTHqhUOuL38d0Y00DHJQZK6H"
-      urlScheme="successtutoring"
-    >
     <ParentProvider>
       <NavigationContainer>
         <StatusBar style="dark" />
@@ -43,6 +38,5 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
     </ParentProvider>
-    </StripeProvider>
   );
 }
