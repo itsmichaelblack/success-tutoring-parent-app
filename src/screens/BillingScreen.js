@@ -53,26 +53,23 @@ export default function BillingScreen({ navigation }) {
   const handleAddPaymentMethod = async () => {
     setAdding(true);
     try {
-      // Call createPaymentLink Cloud Function via HTTPS
-      // This creates a Stripe Checkout session and returns a URL
-      const response = await fetch(`${FUNCTIONS_URL}/createPaymentLink`, {
+      // Call public Cloud Function via HTTPS
+      const response = await fetch(`${FUNCTIONS_URL}/createPaymentLinkPublic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          data: {
-            parentEmail: parentData.email,
-            locationId: parentData.locationId,
-            saleId: 'none',
-          }
+          parentEmail: parentData.email,
+          locationId: parentData.locationId,
+          saleId: 'none',
         }),
       });
 
       const result = await response.json();
 
-      if (result?.result?.url) {
+      if (result?.url) {
         // Open Stripe Checkout in browser
         const { Linking } = require('react-native');
-        await Linking.openURL(result.result.url);
+        await Linking.openURL(result.url);
 
         // After user returns, try to confirm the payment method was saved
         Alert.alert(
@@ -84,34 +81,32 @@ export default function BillingScreen({ navigation }) {
               text: 'Confirm',
               onPress: async () => {
                 try {
-                  const confirmResponse = await fetch(`${FUNCTIONS_URL}/savePaymentFromCheckout`, {
+                  const confirmResponse = await fetch(`${FUNCTIONS_URL}/savePaymentFromCheckoutPublic`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                      data: {
-                        parentEmail: parentData.email,
-                        locationId: parentData.locationId,
-                      }
+                      parentEmail: parentData.email,
+                      locationId: parentData.locationId,
                     }),
                   });
 
                   const confirmResult = await confirmResponse.json();
-                  if (confirmResult?.result?.success) {
+                  if (confirmResult?.success) {
                     const pmInfo = {
-                      brand: confirmResult.result.brand || 'Card',
-                      last4: confirmResult.result.last4 || '****',
-                      type: confirmResult.result.type || 'card',
+                      brand: confirmResult.brand || 'Card',
+                      last4: confirmResult.last4 || '****',
+                      type: confirmResult.type || 'card',
                     };
 
                     await updateDoc(doc(db, 'parents', parentData.id), {
                       paymentMethod: pmInfo,
-                      stripeCustomerId: confirmResult.result.customerId,
+                      stripeCustomerId: confirmResult.customerId,
                     });
 
                     setParentData(prev => ({
                       ...prev,
                       paymentMethod: pmInfo,
-                      stripeCustomerId: confirmResult.result.customerId,
+                      stripeCustomerId: confirmResult.customerId,
                     }));
 
                     setPaymentMethods(prev => {
@@ -132,7 +127,7 @@ export default function BillingScreen({ navigation }) {
           ]
         );
       } else {
-        const errorMsg = result?.error?.message || 'Failed to create payment link.';
+        const errorMsg = result?.error || 'Failed to create payment link.';
         if (errorMsg.includes('not connected') || errorMsg.includes('Stripe not connected')) {
           Alert.alert('Stripe Not Connected', 'Your centre has not connected Stripe yet. Please contact your centre.');
         } else {
