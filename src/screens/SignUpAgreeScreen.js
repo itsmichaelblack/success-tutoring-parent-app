@@ -283,7 +283,7 @@ export default function SignUpAgreeScreen({ navigation, route }) {
         presentationStyle="fullScreen"
         onRequestClose={() => setModalVisible(false)}
       >
-        <SafeAreaView style={s.modalContainer}>
+        <SafeAreaView style={s.modalContainer} edges={['top', 'bottom']}>
           {/* Modal header */}
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{modalPolicy?.label || 'Policy'}</Text>
@@ -337,7 +337,7 @@ const s = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: COLORS.white },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SIZES.padding, paddingVertical: 16,
+    paddingHorizontal: SIZES.padding, paddingTop: 8, paddingBottom: 16,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   modalTitle: { fontSize: 18, fontWeight: '800', color: COLORS.dark, flex: 1 },
