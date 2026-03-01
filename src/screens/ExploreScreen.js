@@ -133,9 +133,36 @@ export default function ExploreScreen({ navigation }) {
           where('type', '==', 'session')
         );
         const snap = await getDocs(q2);
-        const result = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        result.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-        setSessions(result);
+        const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Load student counts + service allowedMemberships for each session
+        const enriched = await Promise.all(results.map(async (session) => {
+          // Count students in subcollection
+          let studentCount = 0;
+          try {
+            const studSnap = await getDocs(collection(db, 'bookings', session.id, 'students'));
+            studentCount = studSnap.size;
+          } catch (e) { /* ignore */ }
+
+          // Load service to get allowedMemberships and maxStudents
+          let allowedMemberships = [];
+          let maxStudents = 6;
+          if (session.serviceId) {
+            try {
+              const svcSnap = await getDoc(doc(db, 'services', session.serviceId));
+              if (svcSnap.exists()) {
+                const svcData = svcSnap.data();
+                allowedMemberships = svcData.allowedMemberships || [];
+                maxStudents = svcData.maxStudents || 6;
+              }
+            } catch (e) { /* ignore */ }
+          }
+
+          return { ...session, studentCount, maxStudents, allowedMemberships };
+        }));
+
+        enriched.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+        setSessions(enriched);
       } catch (e) {
         console.error('Failed to load sessions:', e);
         setSessions([]);
@@ -160,12 +187,12 @@ export default function ExploreScreen({ navigation }) {
     return `${h > 12 ? h - 12 : h === 0 ? 12 : h}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
   };
 
-  // Credit check
+  // Credit check — rolling 7-day window
   const getChildCreditStatus = (child) => {
     const parentEmail = parentData?.email?.toLowerCase();
     const childSales = sales.filter(s =>
       s.parentEmail?.toLowerCase() === parentEmail &&
-      (s.status === 'active' || !s.status) &&
+      (s.status === 'active' || s.status === 'pending' || !s.status) &&
       s.activationDate
     );
     if (childSales.length === 0) return { allowed: false, reason: 'No active membership' };
@@ -180,20 +207,33 @@ export default function ExploreScreen({ navigation }) {
     });
 
     if (!bestSale) return { allowed: false, reason: 'No active membership for this child' };
-    if (maxCredits >= 999) return { allowed: true, remaining: '∞', sale: bestSale };
+    if (maxCredits >= 999) return { allowed: true, remaining: '∞', sale: bestSale, membershipId: bestSale.membershipId };
 
-    const activation = new Date(bestSale.activationDate + 'T00:00:00');
-    const sessionDt = new Date((selectedDate?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0]) + 'T00:00:00');
-    const daysSince = Math.floor((sessionDt - activation) / 86400000);
-    const weekNum = Math.floor(daysSince / 7);
-    const weekStart = new Date(activation);
-    weekStart.setDate(weekStart.getDate() + (weekNum * 7));
-    const weekKey = `week_${weekStart.toISOString().split('T')[0]}`;
-    const used = bestSale.creditsUsed?.[weekKey]?.[child.name?.toLowerCase()] || 0;
+    // Rolling 7-day window: count bookings from today-6 to today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    const weekKey = `rolling_${weekAgo.toISOString().split('T')[0]}`;
+
+    // For backward compatibility, check both old and new format
+    const creditsUsed = bestSale.creditsUsed || {};
+    let used = 0;
+
+    // Count used credits across all week keys that overlap the rolling window
+    Object.entries(creditsUsed).forEach(([key, weekData]) => {
+      const childUsed = weekData[child.name?.toLowerCase()] || 0;
+      // Check if this week key is within our rolling window
+      const keyDate = key.replace('week_', '').replace('rolling_', '');
+      if (keyDate >= weekAgo.toISOString().split('T')[0]) {
+        used += childUsed;
+      }
+    });
+
     const remaining = maxCredits - used;
 
-    if (remaining <= 0) return { allowed: false, reason: `No credits left this week`, sale: bestSale };
-    return { allowed: true, remaining, total: maxCredits, sale: bestSale, weekKey };
+    if (remaining <= 0) return { allowed: false, reason: `No credits left this week`, sale: bestSale, membershipId: bestSale.membershipId };
+    return { allowed: true, remaining, total: maxCredits, sale: bestSale, weekKey, membershipId: bestSale.membershipId };
   };
 
   // Book assessment
@@ -228,11 +268,39 @@ export default function ExploreScreen({ navigation }) {
     const child = children[selectedChild];
     const creditStatus = getChildCreditStatus(child);
 
+    // Check capacity
+    if (session.studentCount >= session.maxStudents) {
+      Alert.alert('Session Full', `This session is full (${session.maxStudents}/${session.maxStudents} spots taken).`);
+      return;
+    }
+
     if (!creditStatus.allowed) {
       setPendingSession(session);
       setShowMembershipModal(true);
       return;
     }
+
+    // Check if membership allows this service
+    if (session.allowedMemberships && session.allowedMemberships.length > 0 && creditStatus.membershipId) {
+      if (!session.allowedMemberships.includes(creditStatus.membershipId)) {
+        Alert.alert(
+          'Membership Mismatch',
+          `Your current membership doesn't include this session type. Please upgrade your membership or choose a different session.`
+        );
+        return;
+      }
+    }
+
+    // Check if child is already booked into this session
+    try {
+      const studSnap = await getDocs(collection(db, 'bookings', session.id, 'students'));
+      const alreadyBooked = studSnap.docs.some(d => d.data().name?.toLowerCase() === child.name?.toLowerCase());
+      if (alreadyBooked) {
+        Alert.alert('Already Booked', `${child.name} is already booked into this session.`);
+        return;
+      }
+    } catch (e) { /* proceed */ }
+
     await doBookSession(session, child, creditStatus);
   };
 
@@ -283,69 +351,20 @@ export default function ExploreScreen({ navigation }) {
     setBooking(false);
   };
 
-  // Purchase membership
+  // Purchase membership — navigate to checkout
   const handlePurchaseMembership = async (membershipId) => {
     if (selectedChild === null) return;
-
-    // Check if parent has a payment method on file
-    const hasPayment = parentData?.paymentMethod || parentData?.stripeCustomerId;
-    if (!hasPayment) {
-      Alert.alert(
-        'Payment Method Required',
-        'You need to add a payment method before purchasing a membership.',
-        [
-          { text: 'Add Payment Method', onPress: () => { setShowMembershipModal(false); setPendingSession(null); navigation.navigate('Billing'); } },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
-      return;
-    }
-
     const child = children[selectedChild];
     const info = ALL_MEMBERSHIPS.find(m => m.id === membershipId);
     const price = pricing?.[membershipId]?.price || '0';
-    const today = new Date().toISOString().split('T')[0];
 
-    setMembershipSaving(true);
-    try {
-      const saleData = {
-        locationId: parentData.locationId,
-        children: [{ name: child.name, grade: child.grade || '' }],
-        parentName: parentData.name,
-        parentEmail: parentData.email?.toLowerCase(),
-        parentPhone: parentData.phone,
-        parentId: parentData.id,
-        membershipId, membershipName: info?.name || membershipId,
-        membershipCategory: info?.category || 'membership',
-        basePrice: price, weeklyAmount: price,
-        activationDate: today, firstPaymentDate: today,
-        billingFrequency: 'weekly', status: 'active',
-        stripeStatus: 'requires_payment_method',
-        paymentMethod: null,
-        createdAt: serverTimestamp(), source: 'mobile_app',
-      };
-      const ref = await addDoc(collection(db, 'sales'), saleData);
-      const newSale = { id: ref.id, ...saleData };
-      setSales(prev => [...prev, newSale]);
-      setShowMembershipModal(false);
-
-      Alert.alert('Membership Activated!',
-        `${info?.name} is now active for ${child.name}.`,
-        [{ text: 'Book Session', onPress: async () => {
-          if (pendingSession) {
-            const credits = CREDITS_MAP[membershipId] || 0;
-            await doBookSession(pendingSession, child, {
-              allowed: true, remaining: credits >= 999 ? '∞' : credits,
-              sale: newSale, weekKey: `week_${today}`,
-            });
-            setPendingSession(null);
-          }
-        }}]
-      );
-    } catch (e) {
-      Alert.alert('Error', 'Failed to create membership.');
-    }
-    setMembershipSaving(false);
+    setShowMembershipModal(false);
+    setPendingSession(null);
+    navigation.navigate('Checkout', {
+      child,
+      membership: { id: membershipId, name: info?.name, desc: '', credits: info?.credits, category: info?.category },
+      price,
+    });
   };
 
   const availableMemberships = ALL_MEMBERSHIPS.filter(m => pricing?.[m.id]?.enabled);
@@ -438,8 +457,21 @@ export default function ExploreScreen({ navigation }) {
                 const t = h * 60 + m + (session.duration || DURATION);
                 return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
               })();
+              const isFull = session.studentCount >= session.maxStudents;
+              const spotsLeft = session.maxStudents - session.studentCount;
+
+              // Check membership match for selected child
+              let membershipMatch = true;
+              if (selectedChild !== null && session.allowedMemberships?.length > 0) {
+                const child = children[selectedChild];
+                const creditStatus = getChildCreditStatus(child);
+                if (creditStatus.membershipId && !session.allowedMemberships.includes(creditStatus.membershipId)) {
+                  membershipMatch = false;
+                }
+              }
+
               return (
-                <TouchableOpacity key={session.id || i} style={s.sessionCard} onPress={() => handleBookSession(session)} disabled={booking}>
+                <TouchableOpacity key={session.id || i} style={[s.sessionCard, isFull && { opacity: 0.5 }, !membershipMatch && { opacity: 0.5 }]} onPress={() => handleBookSession(session)} disabled={booking || isFull}>
                   <View style={s.sessionTimeCol}>
                     <Text style={s.sessionTime}>{fmtTime(session.time)}</Text>
                     <Text style={s.sessionTimeEnd}>{fmtTime(endTime)}</Text>
@@ -448,9 +480,21 @@ export default function ExploreScreen({ navigation }) {
                   <View style={{ flex: 1 }}>
                     <Text style={s.sessionService}>{session.serviceName || 'Tutoring Session'}</Text>
                     {session.tutorName ? <Text style={s.sessionTutor}>with {session.tutorName}</Text> : null}
-                    <Text style={s.sessionDur}>{session.duration || DURATION} min</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                      <Text style={s.sessionDur}>{session.duration || DURATION} min</Text>
+                      <Text style={{ fontSize: 11, color: isFull ? COLORS.orange : COLORS.muted }}>
+                        {isFull ? 'Full' : `${spotsLeft} spot${spotsLeft !== 1 ? 's' : ''} left`}
+                      </Text>
+                    </View>
+                    {!membershipMatch && (
+                      <Text style={{ fontSize: 10, color: COLORS.orange, marginTop: 2 }}>Not included in your plan</Text>
+                    )}
                   </View>
-                  <View style={s.bookBtn}><Text style={s.bookBtnText}>{booking ? '...' : 'Book'}</Text></View>
+                  {isFull ? (
+                    <View style={[s.bookBtn, { backgroundColor: COLORS.border }]}><Text style={[s.bookBtnText, { color: COLORS.muted }]}>Full</Text></View>
+                  ) : (
+                    <View style={s.bookBtn}><Text style={s.bookBtnText}>{booking ? '...' : 'Book'}</Text></View>
+                  )}
                 </TouchableOpacity>
               );
             })}
