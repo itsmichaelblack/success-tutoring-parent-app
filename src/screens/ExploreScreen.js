@@ -142,11 +142,13 @@ export default function ExploreScreen({ navigation }) {
 
         // Load student counts + service allowedMemberships for each session
         const enriched = await Promise.all(results.map(async (session) => {
-          // Count students in subcollection
+          // Count students in subcollection and get their names
           let studentCount = 0;
+          let studentNames = [];
           try {
             const studSnap = await getDocs(collection(db, 'bookings', session.id, 'students'));
             studentCount = studSnap.size;
+            studentNames = studSnap.docs.map(d => d.data().name?.toLowerCase()).filter(Boolean);
           } catch (e) { /* ignore */ }
 
           // Load service to get allowedMemberships and maxStudents
@@ -163,7 +165,7 @@ export default function ExploreScreen({ navigation }) {
             } catch (e) { /* ignore */ }
           }
 
-          return { ...session, studentCount, maxStudents, allowedMemberships };
+          return { ...session, studentCount, studentNames, maxStudents, allowedMemberships };
         }));
 
         enriched.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -498,6 +500,10 @@ export default function ExploreScreen({ navigation }) {
               const isFull = session.studentCount >= session.maxStudents;
               const spotsLeft = session.maxStudents - session.studentCount;
 
+              // Check if selected child is already booked
+              const isBooked = selectedChild !== null && children[selectedChild] &&
+                (session.studentNames || []).includes(children[selectedChild].name?.toLowerCase());
+
               // Check membership match for selected child
               let membershipMatch = true;
               if (selectedChild !== null && session.allowedMemberships?.length > 0) {
@@ -509,7 +515,7 @@ export default function ExploreScreen({ navigation }) {
               }
 
               return (
-                <TouchableOpacity key={session.id || i} style={[s.sessionCard, isFull && { opacity: 0.5 }, !membershipMatch && { opacity: 0.5 }]} onPress={() => handleBookSession(session)} disabled={booking || isFull}>
+                <TouchableOpacity key={session.id || i} style={[s.sessionCard, (isFull && !isBooked) && { opacity: 0.5 }, !membershipMatch && { opacity: 0.5 }]} onPress={() => handleBookSession(session)} disabled={booking || isFull || isBooked}>
                   <View style={s.sessionTimeCol}>
                     <Text style={s.sessionTime}>{fmtTime(session.time)}</Text>
                     <Text style={s.sessionTimeEnd}>{fmtTime(endTime)}</Text>
@@ -528,7 +534,11 @@ export default function ExploreScreen({ navigation }) {
                       <Text style={{ fontSize: 10, color: COLORS.orange, marginTop: 2 }}>Not included in your plan</Text>
                     )}
                   </View>
-                  {isFull ? (
+                  {isBooked ? (
+                    <View style={[s.bookBtn, { backgroundColor: COLORS.successBg }]}>
+                      <Text style={[s.bookBtnText, { color: COLORS.success }]}>Booked ✓</Text>
+                    </View>
+                  ) : isFull ? (
                     <View style={[s.bookBtn, { backgroundColor: COLORS.border }]}><Text style={[s.bookBtnText, { color: COLORS.muted }]}>Full</Text></View>
                   ) : (
                     <View style={s.bookBtn}><Text style={s.bookBtnText}>{booking ? '...' : 'Book'}</Text></View>
