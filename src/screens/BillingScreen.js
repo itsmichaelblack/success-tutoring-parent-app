@@ -122,13 +122,28 @@ export default function BillingScreen({ navigation }) {
   };
 
   // Detect when Stripe redirects to success URL
+  // Detect when Stripe redirects to success/cancel URL
   const handleNavigationChange = (navState) => {
-    if (navState.url && navState.url.includes('payment_setup=success')) {
+    const url = navState.url || '';
+    if (url.includes('payment_setup=success')) {
       handleWebViewClose(true);
-    }
-    if (navState.url && navState.url.includes('payment_setup=cancelled')) {
+    } else if (url.includes('payment_setup=cancelled')) {
       handleWebViewClose(false);
     }
+  };
+
+  // Also intercept URL loads (more reliable than onNavigationStateChange)
+  const handleShouldStartLoad = (request) => {
+    const url = request.url || '';
+    if (url.includes('payment_setup=success')) {
+      handleWebViewClose(true);
+      return false; // prevent loading the portal page
+    }
+    if (url.includes('payment_setup=cancelled')) {
+      handleWebViewClose(false);
+      return false;
+    }
+    return true;
   };
 
   return (
@@ -195,6 +210,7 @@ export default function BillingScreen({ navigation }) {
             <WebView
               source={{ uri: checkoutUrl }}
               onNavigationStateChange={handleNavigationChange}
+              onShouldStartLoadWithRequest={handleShouldStartLoad}
               startInLoadingState
               renderLoading={() => (
                 <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: COLORS.white }}>
