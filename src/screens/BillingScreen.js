@@ -75,12 +75,18 @@ export default function BillingScreen({ navigation }) {
     setAdding(false);
   };
 
-  const handleWebViewClose = async () => {
+  const handleWebViewClose = async (wasSuccess) => {
     setWebViewVisible(false);
     setCheckoutUrl('');
 
-    // Try to confirm the payment method was saved
+    if (!wasSuccess) return;
+
+    // Show loading while confirming
+    setAdding(true);
     try {
+      // Small delay to let Stripe process
+      await new Promise(r => setTimeout(r, 2000));
+
       const confirmResponse = await fetch(`${FUNCTIONS_URL}/savePaymentFromCheckoutPublic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -104,21 +110,24 @@ export default function BillingScreen({ navigation }) {
           return [...prev, pmInfo];
         });
         Alert.alert('Success!', `Your ${pmInfo.brand} card ending in ${pmInfo.last4} has been saved.`);
+      } else {
+        Alert.alert('Processing', 'Your card may take a moment to appear. Pull down to refresh.');
       }
     } catch (e) {
       console.error('Confirm error:', e);
+      Alert.alert('Processing', 'Your card may take a moment to appear.');
     }
+    setAdding(false);
     await loadPaymentMethods();
   };
 
   // Detect when Stripe redirects to success URL
   const handleNavigationChange = (navState) => {
     if (navState.url && navState.url.includes('payment_setup=success')) {
-      handleWebViewClose();
+      handleWebViewClose(true);
     }
     if (navState.url && navState.url.includes('payment_setup=cancelled')) {
-      setWebViewVisible(false);
-      setCheckoutUrl('');
+      handleWebViewClose(false);
     }
   };
 
@@ -174,11 +183,11 @@ export default function BillingScreen({ navigation }) {
       </ScrollView>
 
       {/* Stripe Checkout WebView Modal */}
-      <Modal visible={webViewVisible} animationType="slide" onRequestClose={() => { setWebViewVisible(false); setCheckoutUrl(''); }}>
+      <Modal visible={webViewVisible} animationType="slide" onRequestClose={() => handleWebViewClose(false)}>
         <View style={[s.webViewContainer, { paddingTop: insets.top }]}>
           <View style={s.webViewHeader}>
             <Text style={s.webViewTitle}>Add Payment Method</Text>
-            <TouchableOpacity onPress={handleWebViewClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity onPress={() => handleWebViewClose(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Feather name="x" size={22} color={COLORS.muted} />
             </TouchableOpacity>
           </View>
