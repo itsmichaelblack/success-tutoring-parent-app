@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { useStripe } from '@stripe/stripe-react-native';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
@@ -11,13 +12,12 @@ const FUNCTIONS_URL = 'https://us-central1-success-tutoring-test.cloudfunctions.
 
 export default function BillingScreen({ navigation }) {
   const { parentData, setParentData } = useParent();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState([]);
 
-  useEffect(() => {
-    loadPaymentMethods();
-  }, []);
+  useEffect(() => { loadPaymentMethods(); }, []);
 
   const loadPaymentMethods = async () => {
     setLoading(true);
@@ -37,106 +37,92 @@ export default function BillingScreen({ navigation }) {
           methods.push(data.paymentMethod);
         }
       });
-
-      // Also check parent doc
       if (parentData?.paymentMethod?.last4 && !seen.has(parentData.paymentMethod.last4)) {
         methods.push(parentData.paymentMethod);
       }
-
       setPaymentMethods(methods);
-    } catch (e) {
-      console.error('Failed to load payment methods:', e);
-    }
+    } catch (e) { console.error('Failed to load payment methods:', e); }
     setLoading(false);
   };
 
   const handleAddPaymentMethod = async () => {
     setAdding(true);
     try {
-      // Call public Cloud Function via HTTPS
-      const response = await fetch(`${FUNCTIONS_URL}/createPaymentLinkPublic`, {
+      // 1. Get SetupIntent from backend
+      const response = await fetch(`${FUNCTIONS_URL}/createSetupIntentPublic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parentEmail: parentData.email,
-          locationId: parentData.locationId,
-          saleId: 'none',
-        }),
+        body: JSON.stringify({ parentEmail: parentData.email, locationId: parentData.locationId }),
       });
-
       const result = await response.json();
 
-      if (result?.url) {
-        // Open Stripe Checkout in browser
-        const { Linking } = require('react-native');
-        await Linking.openURL(result.url);
-
-        // After user returns, try to confirm the payment method was saved
-        Alert.alert(
-          'Payment Setup',
-          'After completing payment setup in the browser, tap "Confirm" to update your account.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Confirm',
-              onPress: async () => {
-                try {
-                  const confirmResponse = await fetch(`${FUNCTIONS_URL}/savePaymentFromCheckoutPublic`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      parentEmail: parentData.email,
-                      locationId: parentData.locationId,
-                    }),
-                  });
-
-                  const confirmResult = await confirmResponse.json();
-                  if (confirmResult?.success) {
-                    const pmInfo = {
-                      brand: confirmResult.brand || 'Card',
-                      last4: confirmResult.last4 || '****',
-                      type: confirmResult.type || 'card',
-                    };
-
-                    await updateDoc(doc(db, 'parents', parentData.id), {
-                      paymentMethod: pmInfo,
-                      stripeCustomerId: confirmResult.customerId,
-                    });
-
-                    setParentData(prev => ({
-                      ...prev,
-                      paymentMethod: pmInfo,
-                      stripeCustomerId: confirmResult.customerId,
-                    }));
-
-                    setPaymentMethods(prev => {
-                      if (prev.some(p => p.last4 === pmInfo.last4)) return prev;
-                      return [...prev, pmInfo];
-                    });
-
-                    Alert.alert('Success!', `Your ${pmInfo.brand} card ending in ${pmInfo.last4} has been saved.`);
-                  } else {
-                    Alert.alert('Not Found', 'No payment method found yet. It may take a moment to process. Try again shortly.');
-                  }
-                } catch (e) {
-                  console.error('Confirm error:', e);
-                  Alert.alert('Error', 'Could not confirm payment method. Try again.');
-                }
-              }
-            }
-          ]
-        );
-      } else {
-        const errorMsg = result?.error || 'Failed to create payment link.';
-        if (errorMsg.includes('not connected') || errorMsg.includes('Stripe not connected')) {
+      if (result.error) {
+        if (result.error.includes('not connected')) {
           Alert.alert('Stripe Not Connected', 'Your centre has not connected Stripe yet. Please contact your centre.');
         } else {
-          Alert.alert('Error', errorMsg);
+          Alert.alert('Error', result.error);
         }
+        setAdding(false);
+        return;
       }
 
+      // 2. Initialize the Payment Sheet
+      const { error: initError } = await initPaymentSheet({
+        setupIntentClientSecret: result.setupIntent,
+        customerEphemeralKeySecret: result.ephemeralKey,
+        customerId: result.customer,
+        merchantDisplayName: 'Success Tutoring',
+        returnURL: 'successtutor://billing',
+        allowsDelayedPaymentMethods: false,
+      });
+
+      if (initError) {
+        Alert.alert('Error', initError.message || 'Failed to initialize payment sheet.');
+        setAdding(false);
+        return;
+      }
+
+      // 3. Present the Payment Sheet
+      const { error: presentError } = await presentPaymentSheet();
+
+      if (presentError) {
+        if (presentError.code !== 'Canceled') {
+          Alert.alert('Error', presentError.message || 'Payment setup failed.');
+        }
+        setAdding(false);
+        return;
+      }
+
+      // 4. Payment method saved! Confirm from backend
+      const confirmResponse = await fetch(`${FUNCTIONS_URL}/savePaymentFromCheckoutPublic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentEmail: parentData.email, locationId: parentData.locationId }),
+      });
+      const confirmResult = await confirmResponse.json();
+
+      if (confirmResult?.success) {
+        const pmInfo = {
+          brand: confirmResult.brand || 'Card',
+          last4: confirmResult.last4 || '****',
+          type: confirmResult.type || 'card',
+        };
+        await updateDoc(doc(db, 'parents', parentData.id), {
+          paymentMethod: pmInfo,
+          stripeCustomerId: confirmResult.customerId,
+        });
+        setParentData(prev => ({ ...prev, paymentMethod: pmInfo, stripeCustomerId: confirmResult.customerId }));
+        setPaymentMethods(prev => {
+          if (prev.some(p => p.last4 === pmInfo.last4)) return prev;
+          return [...prev, pmInfo];
+        });
+        Alert.alert('Success!', `Your ${pmInfo.brand} card ending in ${pmInfo.last4} has been saved.`);
+      } else {
+        Alert.alert('Card Saved', 'Your payment method has been saved. It may take a moment to appear.');
+        await loadPaymentMethods();
+      }
     } catch (e) {
-      console.error('Payment link error:', e);
+      console.error('Payment setup error:', e);
       Alert.alert('Error', 'Failed to set up payment. Please try again.');
     }
     setAdding(false);
@@ -150,21 +136,14 @@ export default function BillingScreen({ navigation }) {
         </TouchableOpacity>
         <Text style={s.title}>Billing & Payments</Text>
       </View>
-
       <ScrollView style={{ flex: 1, paddingHorizontal: SIZES.padding }} showsVerticalScrollIndicator={false}>
         <View style={{ height: 16 }} />
-
         <Text style={s.sectionTitle}>Payment Methods</Text>
-
         {loading ? (
-          <View style={{ padding: 30, alignItems: 'center' }}>
-            <ActivityIndicator color={COLORS.orange} />
-          </View>
+          <View style={{ padding: 30, alignItems: 'center' }}><ActivityIndicator color={COLORS.orange} /></View>
         ) : paymentMethods.length === 0 ? (
           <View style={s.emptyCard}>
-            <View style={s.emptyIcon}>
-              <Feather name="credit-card" size={24} color={COLORS.muted} />
-            </View>
+            <View style={s.emptyIcon}><Feather name="credit-card" size={24} color={COLORS.muted} /></View>
             <Text style={s.emptyText}>No payment methods</Text>
             <Text style={s.emptyDesc}>Add a card to enable automatic payments for your child's membership.</Text>
           </View>
@@ -179,35 +158,24 @@ export default function BillingScreen({ navigation }) {
                 {pm.expMonth && <Text style={s.cardExpiry}>Expires {pm.expMonth}/{pm.expYear}</Text>}
                 {pm.type === 'au_becs_debit' && <Text style={s.cardExpiry}>BECS Direct Debit</Text>}
               </View>
-              <View style={s.defaultBadge}>
-                <Text style={s.defaultText}>Active</Text>
-              </View>
+              <View style={s.defaultBadge}><Text style={s.defaultText}>Active</Text></View>
             </View>
           ))
         )}
-
         <TouchableOpacity style={[s.addBtn, adding && { opacity: 0.5 }]} onPress={handleAddPaymentMethod} disabled={adding}>
-          {adding ? (
-            <ActivityIndicator color={COLORS.orange} size="small" />
-          ) : (
-            <>
-              <Feather name="plus" size={16} color={COLORS.orange} />
-              <Text style={s.addBtnText}>Add Payment Method</Text>
-            </>
+          {adding ? <ActivityIndicator color={COLORS.orange} size="small" /> : (
+            <><Feather name="plus" size={16} color={COLORS.orange} /><Text style={s.addBtnText}>Add Payment Method</Text></>
           )}
         </TouchableOpacity>
-
         <Text style={[s.sectionTitle, { marginTop: 28 }]}>Billing History</Text>
         <View style={s.emptyCard}>
           <Text style={s.emptyText}>No transactions yet</Text>
           <Text style={s.emptyDesc}>Your payment history will appear here once you have an active membership.</Text>
         </View>
-
         <View style={s.noteCard}>
           <Feather name="lock" size={16} color={COLORS.success} />
           <Text style={s.noteText}>Your payment information is securely processed by Stripe. We never store your full card details.</Text>
         </View>
-
         <View style={{ height: 30 }} />
       </ScrollView>
     </SafeAreaView>
