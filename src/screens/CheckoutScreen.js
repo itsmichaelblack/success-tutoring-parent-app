@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
 import { COLORS, SIZES } from '../config/theme';
@@ -29,17 +29,19 @@ function RichTextRenderer({ html }) {
 }
 
 const FUNCTIONS_URL = 'https://us-central1-success-tutoring-test.cloudfunctions.net';
+const JOINING_FEE = 99;
 
 export default function CheckoutScreen({ route, navigation }) {
   const { parentData, setParentData } = useParent();
   const { child, membership, price: basePrice } = route.params || {};
 
-  const [feeConfig, setFeeConfig] = useState(null); // { feePercent, feeFlat }
+  const [feeConfig, setFeeConfig] = useState(null);
   const [membershipPolicy, setMembershipPolicy] = useState(null);
   const [policyAgreed, setPolicyAgreed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
+  const [isFirstMembership, setIsFirstMembership] = useState(false); // joining fee applies
 
   // Calculate fees
   const basePriceNum = parseFloat(basePrice) || 0;
@@ -47,7 +49,9 @@ export default function CheckoutScreen({ route, navigation }) {
   const feeFlat = parseFloat(feeConfig?.feeFlat) || 0;
   const percentFee = basePriceNum * (feePercent / 100);
   const totalFee = Math.round((percentFee + feeFlat) * 100) / 100;
-  const totalAmount = Math.round((basePriceNum + totalFee) * 100) / 100;
+  const weeklyAmount = Math.round((basePriceNum + totalFee) * 100) / 100;
+  const joiningFee = isFirstMembership ? JOINING_FEE : 0;
+  const firstPaymentTotal = Math.round((weeklyAmount + joiningFee) * 100) / 100;
 
   // Fee description for display
   const feeDescParts = [];
@@ -73,13 +77,30 @@ export default function CheckoutScreen({ route, navigation }) {
         }
       }
 
-      // Load membership policy from HQ policies
-      const policySnap = await getDoc(doc(db, 'settings', 'hq.policies'));
+      // Load membership policy from HQ settings
+      const policySnap = await getDoc(doc(db, 'settings', 'hq'));
       if (policySnap.exists()) {
-        const policies = policySnap.data();
+        const policies = policySnap.data()?.policies || {};
         if (policies.membershipPolicy?.enabled && policies.membershipPolicy?.content) {
           setMembershipPolicy(policies.membershipPolicy.content);
         }
+      }
+
+      // Check if this child has ever had a membership (for joining fee)
+      if (parentData?.email && parentData?.locationId && child?.name) {
+        const salesQ = query(
+          collection(db, 'sales'),
+          where('parentEmail', '==', parentData.email.toLowerCase()),
+          where('locationId', '==', parentData.locationId)
+        );
+        const salesSnap = await getDocs(salesQ);
+        const childHasMembership = salesSnap.docs.some(d => {
+          const saleChildren = (d.data().children || []).map(c => c.name?.toLowerCase());
+          return saleChildren.includes(child.name.toLowerCase());
+        });
+        setIsFirstMembership(!childHasMembership);
+      } else {
+        setIsFirstMembership(true);
       }
     } catch (e) {
       console.error('Failed to load checkout data:', e);
@@ -123,9 +144,11 @@ export default function CheckoutScreen({ route, navigation }) {
           membershipName: membership.name,
           membershipCategory: membership.category || 'membership',
           basePrice: basePriceNum.toFixed(2),
-          totalAmount: totalAmount.toFixed(2),
+          totalAmount: weeklyAmount.toFixed(2),
           feeAmount: totalFee.toFixed(2),
           feeDescription,
+          joiningFee: joiningFee.toFixed(2),
+          firstPaymentTotal: firstPaymentTotal.toFixed(2),
         }),
       });
 
@@ -133,7 +156,7 @@ export default function CheckoutScreen({ route, navigation }) {
       if (result.success) {
         Alert.alert(
           'Membership Activated! 🎉',
-          `${membership.name} is now active for ${child.name}.\n\nYou will be charged $${totalAmount.toFixed(2)}/week.`,
+          `${membership.name} is now active for ${child.name}.\n\nYou will be charged $${weeklyAmount.toFixed(2)}/week.`,
           [{ text: 'Done', onPress: () => navigation.navigate('Memberships') }]
         );
       } else {
@@ -212,19 +235,35 @@ export default function CheckoutScreen({ route, navigation }) {
             <Text style={s.sectionLabel}>Total Price</Text>
             <View style={s.priceRow}>
               <Text style={s.priceLabel}>{membership?.name}</Text>
-              <Text style={s.priceValue}>${basePriceNum.toFixed(2)}</Text>
+              <Text style={s.priceValue}>${basePriceNum.toFixed(2)}/wk</Text>
             </View>
             {totalFee > 0 && (
               <View style={s.priceRow}>
                 <Text style={s.feeLabel}>{feeDescription}</Text>
-                <Text style={s.feeValue}>${totalFee.toFixed(2)}</Text>
+                <Text style={s.feeValue}>${totalFee.toFixed(2)}/wk</Text>
               </View>
             )}
             <View style={[s.divider, { marginVertical: 12 }]} />
             <View style={s.priceRow}>
-              <Text style={s.totalLabel}>Total per week</Text>
-              <Text style={s.totalValue}>${totalAmount.toFixed(2)}</Text>
+              <Text style={s.totalLabel}>Weekly total</Text>
+              <Text style={s.totalValue}>${weeklyAmount.toFixed(2)}</Text>
             </View>
+            {joiningFee > 0 && (
+              <>
+                <View style={[s.divider, { marginVertical: 12 }]} />
+                <View style={s.priceRow}>
+                  <Text style={s.priceLabel}>Joining fee (one-time)</Text>
+                  <Text style={s.priceValue}>${joiningFee.toFixed(2)}</Text>
+                </View>
+                <View style={[s.priceRow, { marginTop: 10 }]}>
+                  <Text style={s.totalLabel}>Due today</Text>
+                  <Text style={s.totalValue}>${firstPaymentTotal.toFixed(2)}</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: COLORS.muted, marginTop: 6 }}>
+                  Then ${weeklyAmount.toFixed(2)}/week ongoing
+                </Text>
+              </>
+            )}
           </View>
 
           {/* Payment Method */}
@@ -281,7 +320,7 @@ export default function CheckoutScreen({ route, navigation }) {
             ) : (
               <>
                 <Feather name="lock" size={16} color={COLORS.white} />
-                <Text style={s.confirmBtnText}>Confirm & Pay ${totalAmount.toFixed(2)}/wk</Text>
+                <Text style={s.confirmBtnText}>Confirm & Pay ${firstPaymentTotal.toFixed(2)}</Text>
               </>
             )}
           </TouchableOpacity>
