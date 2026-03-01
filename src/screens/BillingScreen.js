@@ -75,7 +75,7 @@ export default function BillingScreen({ navigation }) {
     setAdding(false);
   };
 
-  const handleWebViewClose = async (wasSuccess) => {
+  const handleWebViewClose = async (wasSuccess, sessionId) => {
     setWebViewVisible(false);
     setCheckoutUrl('');
 
@@ -90,7 +90,11 @@ export default function BillingScreen({ navigation }) {
       const confirmResponse = await fetch(`${FUNCTIONS_URL}/savePaymentFromCheckoutPublic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parentEmail: parentData.email, locationId: parentData.locationId }),
+        body: JSON.stringify({
+          parentEmail: parentData.email,
+          locationId: parentData.locationId,
+          sessionId: sessionId || null,
+        }),
       });
       const confirmResult = await confirmResponse.json();
 
@@ -126,7 +130,10 @@ export default function BillingScreen({ navigation }) {
   const handleNavigationChange = (navState) => {
     const url = navState.url || '';
     if (url.includes('payment_setup=success')) {
-      handleWebViewClose(true);
+      // Extract session_id from URL
+      const match = url.match(/session_id=([^&]+)/);
+      const sessionId = match ? match[1] : null;
+      handleWebViewClose(true, sessionId);
     } else if (url.includes('payment_setup=cancelled')) {
       handleWebViewClose(false);
     }
@@ -136,8 +143,10 @@ export default function BillingScreen({ navigation }) {
   const handleShouldStartLoad = (request) => {
     const url = request.url || '';
     if (url.includes('payment_setup=success')) {
-      handleWebViewClose(true);
-      return false; // prevent loading the portal page
+      const match = url.match(/session_id=([^&]+)/);
+      const sessionId = match ? match[1] : null;
+      handleWebViewClose(true, sessionId);
+      return false;
     }
     if (url.includes('payment_setup=cancelled')) {
       handleWebViewClose(false);
