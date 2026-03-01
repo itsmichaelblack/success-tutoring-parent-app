@@ -111,6 +111,7 @@ export default function BillingScreen({ navigation }) {
           parentEmail: parentData.email,
           locationId: parentData.locationId,
           sessionId: sessionId || null,
+          oldPaymentMethodId: parentData?.paymentMethod?.id || null,
         }),
       });
       const confirmResult = await confirmResponse.json();
@@ -126,10 +127,7 @@ export default function BillingScreen({ navigation }) {
           stripeCustomerId: confirmResult.customerId,
         });
         setParentData(prev => ({ ...prev, paymentMethod: pmInfo, stripeCustomerId: confirmResult.customerId }));
-        setPaymentMethods(prev => {
-          if (prev.some(p => p.last4 === pmInfo.last4)) return prev;
-          return [...prev, pmInfo];
-        });
+        setPaymentMethods([pmInfo]);
         Alert.alert('Success!', `Your ${pmInfo.brand} card ending in ${pmInfo.last4} has been saved.`);
       } else {
         Alert.alert('Processing', 'Your card may take a moment to appear. Pull down to refresh.');
@@ -206,11 +204,19 @@ export default function BillingScreen({ navigation }) {
             </View>
           ))
         )}
-        <TouchableOpacity style={[s.addBtn, adding && { opacity: 0.5 }]} onPress={handleAddPaymentMethod} disabled={adding}>
-          {adding ? <ActivityIndicator color={COLORS.orange} size="small" /> : (
-            <><Feather name="plus" size={16} color={COLORS.orange} /><Text style={s.addBtnText}>Add Payment Method</Text></>
-          )}
-        </TouchableOpacity>
+        {paymentMethods.length === 0 ? (
+          <TouchableOpacity style={[s.addBtn, adding && { opacity: 0.5 }]} onPress={handleAddPaymentMethod} disabled={adding}>
+            {adding ? <ActivityIndicator color={COLORS.orange} size="small" /> : (
+              <><Feather name="plus" size={16} color={COLORS.orange} /><Text style={s.addBtnText}>Add Payment Method</Text></>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={[s.editBtn, adding && { opacity: 0.5 }]} onPress={handleAddPaymentMethod} disabled={adding}>
+            {adding ? <ActivityIndicator color={COLORS.orange} size="small" /> : (
+              <><Feather name="edit-2" size={14} color={COLORS.muted} /><Text style={s.editBtnText}>Edit Payment Method</Text></>
+            )}
+          </TouchableOpacity>
+        )}
         <Text style={[s.sectionTitle, { marginTop: 28 }]}>Billing History</Text>
         <View style={s.emptyCard}>
           <Text style={s.emptyText}>No transactions yet</Text>
@@ -227,7 +233,7 @@ export default function BillingScreen({ navigation }) {
       <Modal visible={webViewVisible} animationType="slide" onRequestClose={() => handleWebViewClose(false)}>
         <View style={[s.webViewContainer, { paddingTop: insets.top }]}>
           <View style={s.webViewHeader}>
-            <Text style={s.webViewTitle}>Add Payment Method</Text>
+            <Text style={s.webViewTitle}>{paymentMethods.length > 0 ? 'Update Payment Method' : 'Add Payment Method'}</Text>
             <TouchableOpacity onPress={() => handleWebViewClose(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Feather name="x" size={22} color={COLORS.muted} />
             </TouchableOpacity>
@@ -275,6 +281,8 @@ const s = StyleSheet.create({
   defaultText: { fontSize: 11, fontWeight: '700', color: COLORS.success },
   addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 14, borderRadius: SIZES.radius, borderWidth: 1, borderStyle: 'dashed', borderColor: COLORS.border, backgroundColor: COLORS.white },
   addBtnText: { fontSize: 14, fontWeight: '600', color: COLORS.orange },
+  editBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
+  editBtnText: { fontSize: 13, fontWeight: '600', color: COLORS.muted },
   noteCard: { flexDirection: 'row', gap: 10, marginTop: 16, padding: 16, borderRadius: SIZES.radius, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
   noteText: { flex: 1, fontSize: 12, color: COLORS.muted, lineHeight: 18 },
   // WebView modal
