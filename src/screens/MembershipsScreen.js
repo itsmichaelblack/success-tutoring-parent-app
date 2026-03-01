@@ -89,7 +89,9 @@ export default function MembershipsScreen({ navigation }) {
         where('parentEmail', '==', parentData.email?.toLowerCase())
       );
       const snap = await getDocs(q);
-      setSales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const salesData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      console.log('Loaded sales:', salesData.length, salesData.map(s => ({ id: s.id, status: s.status, child: s.children?.[0]?.name, membership: s.membershipName })));
+      setSales(salesData);
 
       // Load pricing
       const pSnap = await getDoc(doc(db, 'pricing', parentData.locationId));
@@ -173,7 +175,7 @@ export default function MembershipsScreen({ navigation }) {
             ) : (
               children.map((child, ci) => {
                 const childSales = getChildSales(child);
-                const activeSales = childSales.filter(s => s.status === 'active' || !s.status);
+                const activeSales = childSales.filter(s => s.status !== 'cancelled');
 
                 return (
                   <View key={child.id || ci} style={{ marginBottom: 20 }}>
@@ -212,7 +214,11 @@ export default function MembershipsScreen({ navigation }) {
                               </View>
                               <View style={s.metaItem}>
                                 <Text style={s.metaLabel}>Status</Text>
-                                <View style={s.activeBadge}><Text style={s.activeBadgeText}>Active</Text></View>
+                                <View style={[s.activeBadge, sale.status === 'pending' && { backgroundColor: '#FFF7ED' }]}>
+                                  <Text style={[s.activeBadgeText, sale.status === 'pending' && { color: '#D97706' }]}>
+                                    {sale.status === 'active' ? 'Active' : sale.status === 'pending' ? 'Pending' : 'Active'}
+                                  </Text>
+                                </View>
                               </View>
                             </View>
                           </View>
