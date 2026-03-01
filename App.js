@@ -15,6 +15,7 @@ import BillingScreen from './src/screens/BillingScreen';
 import MyCentreScreen from './src/screens/MyCentreScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import MembershipsScreen from './src/screens/MembershipsScreen';
+import CheckoutScreen from './src/screens/CheckoutScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -35,6 +36,7 @@ export default function App() {
           <Stack.Screen name="MyCentre" component={MyCentreScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="Memberships" component={MembershipsScreen} />
+          <Stack.Screen name="Checkout" component={CheckoutScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </ParentProvider>

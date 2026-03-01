@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, Alert, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { doc, getDoc, addDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
 import { COLORS, SIZES } from '../config/theme';
+import { useFocusEffect } from '@react-navigation/native';
 
 const AU_GRADES = ['Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
 const NZ_GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12', 'Grade 13'];
@@ -71,6 +72,13 @@ export default function MembershipsScreen({ navigation }) {
     if (parentData?.locationId) loadData();
   }, [parentData?.locationId]);
 
+  // Reload when screen comes into focus (e.g. returning from Checkout)
+  useFocusEffect(
+    useCallback(() => {
+      if (parentData?.locationId) loadData();
+    }, [parentData?.locationId])
+  );
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -123,41 +131,15 @@ export default function MembershipsScreen({ navigation }) {
 
     const info = ALL_MEMBERSHIPS[membershipId];
     const price = pricing?.[membershipId]?.price || '0';
-    const today = new Date().toISOString().split('T')[0];
 
-    setSaving(true);
-    try {
-      const saleData = {
-        locationId: parentData.locationId,
-        children: [{ name: selectedChild.name, grade: selectedChild.grade || '' }],
-        parentName: parentData.name,
-        parentEmail: parentData.email?.toLowerCase(),
-        parentPhone: parentData.phone,
-        parentId: parentData.id,
-        membershipId,
-        membershipName: info?.name || membershipId,
-        membershipCategory: info?.category || 'membership',
-        basePrice: price,
-        weeklyAmount: price,
-        activationDate: today,
-        firstPaymentDate: today,
-        billingFrequency: 'weekly',
-        status: 'active',
-        stripeStatus: 'requires_payment_method',
-        paymentMethod: null,
-        createdAt: serverTimestamp(),
-        source: 'mobile_app',
-      };
-      const ref = await addDoc(collection(db, 'sales'), saleData);
-      setSales(prev => [...prev, { id: ref.id, ...saleData }]);
-      setShowPurchase(false);
-      setSelectedChild(null);
-      Alert.alert('Membership Activated!', `${info?.name} is now active for ${selectedChild.name}.`);
-    } catch (e) {
-      console.error('Failed to purchase:', e);
-      Alert.alert('Error', 'Failed to activate membership. Please try again.');
-    }
-    setSaving(false);
+    // Close the purchase modal and navigate to checkout
+    setShowPurchase(false);
+    setSelectedChild(null);
+    navigation.navigate('Checkout', {
+      child: selectedChild,
+      membership: { id: membershipId, ...info, price },
+      price,
+    });
   };
 
   return (
