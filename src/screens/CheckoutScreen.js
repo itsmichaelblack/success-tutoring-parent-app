@@ -6,7 +6,27 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
 import { COLORS, SIZES } from '../config/theme';
-import RichTextRenderer from '../components/RichTextRenderer';
+
+// Simple HTML-to-Text renderer for policy content
+function RichTextRenderer({ html }) {
+  if (!html) return null;
+  const cleanHtml = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '  • ')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return <Text style={{ fontSize: 14, color: COLORS.dark, lineHeight: 22 }}>{cleanHtml}</Text>;
+}
 
 const FUNCTIONS_URL = 'https://us-central1-success-tutoring-test.cloudfunctions.net';
 
