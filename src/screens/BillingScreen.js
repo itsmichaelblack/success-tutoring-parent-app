@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useStripe } from '@stripe/stripe-react-native';
+import { WebView } from 'react-native-webview';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
@@ -12,10 +12,12 @@ const FUNCTIONS_URL = 'https://us-central1-success-tutoring-test.cloudfunctions.
 
 export default function BillingScreen({ navigation }) {
   const { parentData, setParentData } = useParent();
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [webViewVisible, setWebViewVisible] = useState(false);
+  const [checkoutUrl, setCheckoutUrl] = useState('');
 
   useEffect(() => { loadPaymentMethods(); }, []);
 
@@ -48,52 +50,37 @@ export default function BillingScreen({ navigation }) {
   const handleAddPaymentMethod = async () => {
     setAdding(true);
     try {
-      // 1. Get SetupIntent from backend
-      const response = await fetch(`${FUNCTIONS_URL}/createSetupIntentPublic`, {
+      const response = await fetch(`${FUNCTIONS_URL}/createPaymentLinkPublic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parentEmail: parentData.email, locationId: parentData.locationId }),
+        body: JSON.stringify({ parentEmail: parentData.email, locationId: parentData.locationId, saleId: 'none' }),
       });
       const result = await response.json();
 
-      if (result.error) {
-        if (result.error.includes('not connected')) {
+      if (result?.url) {
+        setCheckoutUrl(result.url);
+        setWebViewVisible(true);
+      } else {
+        const errorMsg = result?.error || 'Failed to create payment link.';
+        if (errorMsg.includes('not connected') || errorMsg.includes('Stripe not connected')) {
           Alert.alert('Stripe Not Connected', 'Your centre has not connected Stripe yet. Please contact your centre.');
         } else {
-          Alert.alert('Error', result.error);
+          Alert.alert('Error', errorMsg);
         }
-        setAdding(false);
-        return;
       }
+    } catch (e) {
+      console.error('Payment link error:', e);
+      Alert.alert('Error', 'Failed to set up payment. Please try again.');
+    }
+    setAdding(false);
+  };
 
-      // 2. Initialize the Payment Sheet
-      const { error: initError } = await initPaymentSheet({
-        setupIntentClientSecret: result.setupIntent,
-        customerEphemeralKeySecret: result.ephemeralKey,
-        customerId: result.customer,
-        merchantDisplayName: 'Success Tutoring',
-        returnURL: 'successtutor://billing',
-        allowsDelayedPaymentMethods: false,
-      });
+  const handleWebViewClose = async () => {
+    setWebViewVisible(false);
+    setCheckoutUrl('');
 
-      if (initError) {
-        Alert.alert('Error', initError.message || 'Failed to initialize payment sheet.');
-        setAdding(false);
-        return;
-      }
-
-      // 3. Present the Payment Sheet
-      const { error: presentError } = await presentPaymentSheet();
-
-      if (presentError) {
-        if (presentError.code !== 'Canceled') {
-          Alert.alert('Error', presentError.message || 'Payment setup failed.');
-        }
-        setAdding(false);
-        return;
-      }
-
-      // 4. Payment method saved! Confirm from backend
+    // Try to confirm the payment method was saved
+    try {
       const confirmResponse = await fetch(`${FUNCTIONS_URL}/savePaymentFromCheckoutPublic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -117,15 +104,22 @@ export default function BillingScreen({ navigation }) {
           return [...prev, pmInfo];
         });
         Alert.alert('Success!', `Your ${pmInfo.brand} card ending in ${pmInfo.last4} has been saved.`);
-      } else {
-        Alert.alert('Card Saved', 'Your payment method has been saved. It may take a moment to appear.');
-        await loadPaymentMethods();
       }
     } catch (e) {
-      console.error('Payment setup error:', e);
-      Alert.alert('Error', 'Failed to set up payment. Please try again.');
+      console.error('Confirm error:', e);
     }
-    setAdding(false);
+    await loadPaymentMethods();
+  };
+
+  // Detect when Stripe redirects to success URL
+  const handleNavigationChange = (navState) => {
+    if (navState.url && navState.url.includes('payment_setup=success')) {
+      handleWebViewClose();
+    }
+    if (navState.url && navState.url.includes('payment_setup=cancelled')) {
+      setWebViewVisible(false);
+      setCheckoutUrl('');
+    }
   };
 
   return (
@@ -178,6 +172,36 @@ export default function BillingScreen({ navigation }) {
         </View>
         <View style={{ height: 30 }} />
       </ScrollView>
+
+      {/* Stripe Checkout WebView Modal */}
+      <Modal visible={webViewVisible} animationType="slide" onRequestClose={() => { setWebViewVisible(false); setCheckoutUrl(''); }}>
+        <View style={[s.webViewContainer, { paddingTop: insets.top }]}>
+          <View style={s.webViewHeader}>
+            <Text style={s.webViewTitle}>Add Payment Method</Text>
+            <TouchableOpacity onPress={handleWebViewClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Feather name="x" size={22} color={COLORS.muted} />
+            </TouchableOpacity>
+          </View>
+          {checkoutUrl ? (
+            <WebView
+              source={{ uri: checkoutUrl }}
+              onNavigationStateChange={handleNavigationChange}
+              startInLoadingState
+              renderLoading={() => (
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: COLORS.white }}>
+                  <ActivityIndicator size="large" color={COLORS.orange} />
+                  <Text style={{ marginTop: 12, color: COLORS.muted, fontSize: 13 }}>Loading Stripe...</Text>
+                </View>
+              )}
+              style={{ flex: 1 }}
+            />
+          ) : (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <ActivityIndicator size="large" color={COLORS.orange} />
+            </View>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -202,4 +226,8 @@ const s = StyleSheet.create({
   addBtnText: { fontSize: 14, fontWeight: '600', color: COLORS.orange },
   noteCard: { flexDirection: 'row', gap: 10, marginTop: 16, padding: 16, borderRadius: SIZES.radius, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
   noteText: { flex: 1, fontSize: 12, color: COLORS.muted, lineHeight: 18 },
+  // WebView modal
+  webViewContainer: { flex: 1, backgroundColor: COLORS.white },
+  webViewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SIZES.padding, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  webViewTitle: { fontSize: 18, fontWeight: '800', color: COLORS.dark },
 });
