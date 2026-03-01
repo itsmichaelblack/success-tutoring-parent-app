@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIn
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
-import { collection, query, where, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useParent } from '../config/ParentContext';
 import { COLORS, SIZES } from '../config/theme';
@@ -25,38 +25,16 @@ export default function BillingScreen({ navigation }) {
     setLoading(true);
     try {
       const methods = [];
-      const seen = new Set();
 
-      // Check sales collection
-      const q = query(
-        collection(db, 'sales'),
-        where('parentEmail', '==', parentData?.email?.toLowerCase()),
-        where('locationId', '==', parentData?.locationId)
-      );
-      const snap = await getDocs(q);
-      snap.docs.forEach(d => {
-        const data = d.data();
-        if (data.paymentMethod?.last4 && !seen.has(data.paymentMethod.last4)) {
-          seen.add(data.paymentMethod.last4);
-          methods.push(data.paymentMethod);
-        }
-      });
-
-      // Check parent doc directly from Firestore (freshest data)
+      // Single source of truth: parent document in Firestore
       if (parentData?.id) {
         const parentSnap = await getDoc(doc(db, 'parents', parentData.id));
         if (parentSnap.exists()) {
           const pm = parentSnap.data().paymentMethod;
-          if (pm?.last4 && !seen.has(pm.last4)) {
-            seen.add(pm.last4);
+          if (pm?.last4) {
             methods.push(pm);
           }
         }
-      }
-
-      // Also check in-memory parentData
-      if (parentData?.paymentMethod?.last4 && !seen.has(parentData.paymentMethod.last4)) {
-        methods.push(parentData.paymentMethod);
       }
 
       setPaymentMethods(methods);
