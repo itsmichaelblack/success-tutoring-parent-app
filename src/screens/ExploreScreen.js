@@ -53,6 +53,11 @@ export default function ExploreScreen({ navigation }) {
   const [pendingSession, setPendingSession] = useState(null);
   const [membershipSaving, setMembershipSaving] = useState(false);
 
+  // Booking type choice
+  const [showBookingChoice, setShowBookingChoice] = useState(false);
+  const [choiceSession, setChoiceSession] = useState(null);
+  const [choiceCreditStatus, setChoiceCreditStatus] = useState(null);
+
   const children = parentData?.children || [];
 
   const dates = [];
@@ -301,40 +306,73 @@ export default function ExploreScreen({ navigation }) {
       }
     } catch (e) { /* proceed */ }
 
-    await doBookSession(session, child, creditStatus);
+    // If session is recurring, show choice modal
+    if (session.recurrenceRuleId) {
+      setChoiceSession(session);
+      setChoiceCreditStatus(creditStatus);
+      setShowBookingChoice(true);
+    } else {
+      await doBookSession(session, child, creditStatus, 'one_off');
+    }
   };
 
-  const doBookSession = async (session, child, creditStatus) => {
+  const doBookSession = async (session, child, creditStatus, bookingType = 'one_off') => {
     setBooking(true);
     try {
-      // Add to session's students sub-collection
-      await addDoc(collection(db, 'bookings', session.id, 'students'), {
-        name: child.name, grade: child.grade || '',
-        parentName: parentData.name, parentEmail: parentData.email, parentId: parentData.id,
-        addedAt: serverTimestamp(),
-      });
+      const sessionsToBook = [session];
 
-      // Create parent-facing booking
-      await addDoc(collection(db, 'bookings'), {
-        type: 'parent_session_booking',
-        sessionBookingId: session.id,
-        locationId: parentData.locationId,
-        locationName: parentData.locationName,
-        date: session.date, time: session.time,
-        duration: session.duration || DURATION,
-        serviceId: session.serviceId || '',
-        serviceName: session.serviceName || 'Tutoring Session',
-        tutorName: session.tutorName || '',
-        parentId: parentData.id,
-        customerName: parentData.name,
-        customerEmail: parentData.email,
-        customerPhone: parentData.phone,
-        children: [{ name: child.name, grade: child.grade || '' }],
-        status: 'confirmed', source: 'mobile_app',
-        createdAt: serverTimestamp(),
-      });
+      // If recurring, find all future occurrences with the same recurrence rule
+      if (bookingType === 'recurring' && session.recurrenceRuleId) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const futureQ = query(
+          collection(db, 'bookings'),
+          where('locationId', '==', parentData.locationId),
+          where('recurrenceRuleId', '==', session.recurrenceRuleId),
+          where('type', '==', 'session')
+        );
+        const futureSnap = await getDocs(futureQ);
+        const futureOccurrences = futureSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(b => b.date >= todayStr && b.id !== session.id);
+        sessionsToBook.push(...futureOccurrences);
+      }
 
-      // Deduct credit
+      // Generate a recurring booking group ID
+      const recurringGroupId = bookingType === 'recurring' ? `rg_${Date.now()}` : null;
+
+      for (const sess of sessionsToBook) {
+        // Add to session's students sub-collection
+        await addDoc(collection(db, 'bookings', sess.id, 'students'), {
+          name: child.name, grade: child.grade || '',
+          parentName: parentData.name, parentEmail: parentData.email, parentId: parentData.id,
+          addedAt: serverTimestamp(),
+        });
+
+        // Create parent-facing booking
+        await addDoc(collection(db, 'bookings'), {
+          type: 'parent_session_booking',
+          sessionBookingId: sess.id,
+          locationId: parentData.locationId,
+          locationName: parentData.locationName,
+          date: sess.date, time: sess.time,
+          duration: sess.duration || DURATION,
+          serviceId: sess.serviceId || '',
+          serviceName: sess.serviceName || 'Tutoring Session',
+          tutorName: sess.tutorName || '',
+          recurrenceRuleId: sess.recurrenceRuleId || null,
+          recurringGroupId,
+          bookingType,
+          parentId: parentData.id,
+          customerName: parentData.name,
+          customerEmail: parentData.email,
+          customerPhone: parentData.phone,
+          children: [{ name: child.name, grade: child.grade || '' }],
+          status: 'confirmed', source: 'mobile_app',
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      // Deduct credit for the current week only (future weeks deducted when they come)
       if (creditStatus.sale && creditStatus.weekKey && creditStatus.remaining !== '∞') {
         const creditsUsed = { ...(creditStatus.sale.creditsUsed || {}) };
         const weekData = { ...(creditsUsed[creditStatus.weekKey] || {}) };
@@ -525,6 +563,45 @@ export default function ExploreScreen({ navigation }) {
 
         <View style={{ height: 30 }} />
       </ScrollView>
+
+      {/* Booking Type Choice Modal */}
+      <Modal visible={showBookingChoice} transparent animationType="fade" onRequestClose={() => setShowBookingChoice(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalCard, { paddingBottom: 20 }]}>
+            <Text style={s.modalTitle}>How would you like to book?</Text>
+            <Text style={[s.modalDesc, { marginBottom: 16 }]}>
+              This is a recurring session. You can book just this one or all future occurrences.
+            </Text>
+            <TouchableOpacity
+              style={{ padding: 16, borderRadius: SIZES.radius, borderWidth: 2, borderColor: COLORS.border, backgroundColor: COLORS.white, marginBottom: 10 }}
+              onPress={async () => {
+                setShowBookingChoice(false);
+                if (choiceSession && selectedChild !== null) {
+                  await doBookSession(choiceSession, children[selectedChild], choiceCreditStatus, 'one_off');
+                }
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.dark }}>Just this session</Text>
+              <Text style={{ fontSize: 12, color: COLORS.muted, marginTop: 4 }}>Book only {choiceSession?.date ? new Date(choiceSession.date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' }) : 'this date'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ padding: 16, borderRadius: SIZES.radius, borderWidth: 2, borderColor: COLORS.orange, backgroundColor: COLORS.orangeLight }}
+              onPress={async () => {
+                setShowBookingChoice(false);
+                if (choiceSession && selectedChild !== null) {
+                  await doBookSession(choiceSession, children[selectedChild], choiceCreditStatus, 'recurring');
+                }
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.orange }}>Every week (recurring)</Text>
+              <Text style={{ fontSize: 12, color: COLORS.muted, marginTop: 4 }}>Book into all future occurrences of this session</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginTop: 14, alignItems: 'center' }} onPress={() => setShowBookingChoice(false)}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.muted }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Confirmation Modal */}
       <Modal visible={showConfirm} transparent animationType="fade">

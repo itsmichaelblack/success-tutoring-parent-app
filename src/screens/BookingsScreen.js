@@ -35,8 +35,41 @@ export default function BookingsScreen() {
   };
 
   const today = new Date().toISOString().split('T')[0];
-  const upcoming = bookings.filter(b => b.date >= today);
-  const past = bookings.filter(b => b.date < today);
+
+  // Group recurring bookings — show one card for each recurringGroupId
+  const groupedBookings = (() => {
+    const groups = {};
+    const singles = [];
+    bookings.forEach(b => {
+      if (b.recurringGroupId && b.bookingType === 'recurring') {
+        if (!groups[b.recurringGroupId]) {
+          groups[b.recurringGroupId] = { ...b, occurrences: [b], isRecurring: true };
+        } else {
+          groups[b.recurringGroupId].occurrences.push(b);
+        }
+      } else {
+        singles.push(b);
+      }
+    });
+    // For each recurring group, pick the next upcoming occurrence as the display card
+    const recurringCards = Object.values(groups).map(g => {
+      const futureOccurrences = g.occurrences.filter(o => o.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+      const pastOccurrences = g.occurrences.filter(o => o.date < today);
+      const nextOccurrence = futureOccurrences[0] || g.occurrences[0];
+      return {
+        ...nextOccurrence,
+        isRecurring: true,
+        totalOccurrences: g.occurrences.length,
+        futureCount: futureOccurrences.length,
+        pastCount: pastOccurrences.length,
+        recurringGroupId: g.recurringGroupId,
+      };
+    });
+    return [...singles, ...recurringCards].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  })();
+
+  const upcoming = groupedBookings.filter(b => b.date >= today);
+  const past = groupedBookings.filter(b => b.date < today);
 
   const fmtTime = (t) => {
     if (!t) return '';
@@ -137,14 +170,29 @@ export default function BookingsScreen() {
             <Text style={s.bookingService}>{serviceName}</Text>
             <Text style={s.bookingLoc}>{b.locationName || 'Success Tutoring'}</Text>
           </View>
-          <View style={[s.statusBadge, isPast ? s.statusPast : s.statusConfirmed]}>
-            <Text style={[s.statusText, { color: isPast ? COLORS.muted : COLORS.success }]}>{isPast ? 'Completed' : 'Confirmed'}</Text>
+          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+            <View style={[s.statusBadge, isPast ? s.statusPast : s.statusConfirmed]}>
+              <Text style={[s.statusText, { color: isPast ? COLORS.muted : COLORS.success }]}>{isPast ? 'Completed' : 'Confirmed'}</Text>
+            </View>
+            {b.isRecurring && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, backgroundColor: 'rgba(109,203,202,0.12)' }}>
+                <Feather name="repeat" size={10} color={COLORS.teal} />
+                <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.teal }}>Every {dayName}</Text>
+              </View>
+            )}
           </View>
         </View>
         <View style={s.timeRow}>
           <Feather name="clock" size={14} color={COLORS.muted} />
-          <Text style={s.timeText}>{dayName} · {fmtTime(b.time)} — {fmtEndTime(b.time, b.duration)} ({b.duration || 40} min)</Text>
+          <Text style={s.timeText}>
+            {b.isRecurring ? `Every ${dayName}` : dayName} · {fmtTime(b.time)} — {fmtEndTime(b.time, b.duration)} ({b.duration || 40} min)
+          </Text>
         </View>
+        {b.isRecurring && b.futureCount > 0 && (
+          <Text style={{ fontSize: 11, color: COLORS.muted, marginTop: 4, paddingLeft: 4 }}>
+            {b.futureCount} upcoming session{b.futureCount !== 1 ? 's' : ''}
+          </Text>
+        )}
       </TouchableOpacity>
     );
   };
@@ -154,7 +202,7 @@ export default function BookingsScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={s.header}>
           <Text style={s.title}>Your Bookings</Text>
-          <Text style={s.desc}>Assessment sessions for your children.</Text>
+          <Text style={s.desc}>Your booked sessions and assessments.</Text>
         </View>
 
         {loading ? (
